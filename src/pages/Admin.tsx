@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { decodeText, downloadCsv, parseDelimited } from '../lib/csv';
 import { addDays, dayKey, formatRelative } from '../lib/dates';
@@ -10,11 +10,12 @@ import {
   TEMPLATE_ROWS,
   validateRows,
   type Field,
-  type ImportPlan,
   type ImportRow,
   type Issue,
 } from '../lib/importer';
+import { commitPlan } from '../lib/commit';
 import { useData } from '../lib/store';
+import { AdminEdit } from './AdminEdit';
 import type { MemberDoc, Role, UserDoc } from '../lib/types';
 
 export function Admin({ tab }: { tab: string }) {
@@ -22,6 +23,7 @@ export function Admin({ tab }: { tab: string }) {
   if (!d.isAdmin) return <div className="notice error">管理者だけが使える画面です。</div>;
   const tabs = [
     ['cards', 'カード', '#/admin'],
+    ['edit', '編集', '#/admin/edit'],
     ['members', '利用者', '#/admin/members'],
     ['progress', '学習状況', '#/admin/progress'],
   ];
@@ -34,7 +36,7 @@ export function Admin({ tab }: { tab: string }) {
           </a>
         ))}
       </nav>
-      {tab === 'members' ? <Members /> : tab === 'progress' ? <Progress /> : <Cards />}
+      {tab === 'members' ? <Members /> : tab === 'progress' ? <Progress /> : tab === 'edit' ? <AdminEdit /> : <Cards />}
     </div>
   );
 }
@@ -49,33 +51,6 @@ const FIELD_LABEL: Record<Field, string> = {
   note: '解説',
   tags: 'タグ',
 };
-
-/** Firestore の1回の書き込みは10MiBまでなので、大きいときは分けて送る */
-async function commitPlan(plan: ImportPlan) {
-  const enc = new TextEncoder();
-  const ops: { size: number; apply: (b: ReturnType<typeof writeBatch>) => void }[] = [];
-  for (const [id, chunk] of Object.entries(plan.write)) {
-    ops.push({ size: enc.encode(JSON.stringify(chunk)).length, apply: (b) => b.set(doc(db, 'cards', id), chunk) });
-  }
-  for (const id of plan.remove) ops.push({ size: 100, apply: (b) => b.delete(doc(db, 'cards', id)) });
-  // 科目一覧は最後に更新する
-  ops.push({ size: 50_000, apply: (b) => b.set(doc(db, 'catalog', 'main'), plan.catalog) });
-  let batch = writeBatch(db);
-  let size = 0;
-  let count = 0;
-  for (const op of ops) {
-    if (count > 0 && (size + op.size > 6_000_000 || count >= 400)) {
-      await batch.commit();
-      batch = writeBatch(db);
-      size = 0;
-      count = 0;
-    }
-    op.apply(batch);
-    size += op.size;
-    count++;
-  }
-  await batch.commit();
-}
 
 function Cards() {
   const d = useData();

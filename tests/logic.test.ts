@@ -11,11 +11,12 @@ import {
   validateRows,
   type ImportRow,
 } from '../src/lib/importer';
+import { deleteCard, deleteSet, mergeSet, moveSections, moveSetOrder, moveSetToSubject, renameSections, renameSet } from '../src/lib/edit';
 import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
 import { buildQueue, byImp, countDue, forecast, impOf, inScope, interleave, isUsed, newLimitFor, newStudiedToday, pickNext, sectionsOf, unitKey } from '../src/lib/session';
-import type { CardData, SavedState } from '../src/lib/types';
+import type { CardData, ChunkDoc, SavedState } from '../src/lib/types';
 
 const at = (s: string) => new Date(s).getTime();
 
@@ -393,5 +394,92 @@ describe('progress', () => {
     expect([plan.imported, plan.keptNewer, plan.notFound]).toEqual([2, 1, 1]);
     expect(Object.keys(plan.writes.c1)).toEqual(['a']);
     expect(Object.keys(plan.writes.c2)).toEqual(['c']);
+  });
+});
+
+describe('edit', () => {
+  // 英語に「熟語A」「熟語B」、地理に「地理」の3セット
+  const rows = (subject: string, unit: string, section: string, n: number, prefix: string): ImportRow[] =>
+    Array.from({ length: n }, (_, i) => ({ line: i + 2, id: `${prefix}${i}`, subject, unit, section, front: `${prefix}q${i}`, back: 'a', note: '', tags: [] }));
+  const base = planImport(
+    [...rows('英語', '熟語A', '', 2, 'a'), ...rows('英語', '熟語B', 'x', 1, 'b'), ...rows('地理', '地理', '第1問', 2, 'g')],
+    null,
+    {},
+    { deleteMissing: false },
+  );
+  const cat = base.catalog;
+  const chunks = base.write;
+  const eng = cat.subjects[0];
+  const geo = cat.subjects[1];
+  const [setA, setB] = eng.units;
+  const all = (p: { write: Record<string, ChunkDoc> }, before = chunks) => Object.values({ ...before, ...p.write }).flatMap((c) => c.c);
+
+  it('セットの名前を変える・同じ名前は断る', () => {
+    expect(renameSet(cat, eng.id, setA.id, '英熟語').subjects[0].units[0].name).toBe('英熟語');
+    expect(() => renameSet(cat, eng.id, setA.id, '熟語B')).toThrow('すでにあります');
+  });
+  it('セットをまとめると、区分のないカードは元のセット名が区分になり、IDは変わらない', () => {
+    const p = mergeSet(cat, chunks, { subject: eng.id, unit: setA.id }, { subject: eng.id, unit: setB.id });
+    expect(p.changed).toBe(2);
+    expect(p.catalog.subjects[0].units.map((u) => [u.name, u.count])).toEqual([['熟語B', 3]]);
+    const cards = all(p).filter((c) => c.s === eng.id);
+    expect(cards.map((c) => [c.id, c.u === setB.id, c.c])).toEqual([
+      ['a0', true, '熟語A'],
+      ['a1', true, '熟語A'],
+      ['b0', true, 'x'],
+    ]);
+  });
+  it('区分の名前を変える・まとめる・なくす', () => {
+    const p = renameSections(cat, chunks, geo.id, geo.units[0].id, ['第1問'], '第一問');
+    expect(all(p).filter((c) => c.s === geo.id).map((c) => c.c)).toEqual(['第一問', '第一問']);
+    const none = renameSections(cat, chunks, geo.id, geo.units[0].id, ['第1問'], '');
+    expect(all(none).filter((c) => c.s === geo.id).every((c) => c.c === undefined)).toBe(true);
+  });
+  it('区分を新しいセットへ移す', () => {
+    const p = moveSections(cat, chunks, eng.id, setB.id, ['x'], { newUnit: '熟語C' });
+    expect(p.catalog.subjects[0].units.map((u) => [u.name, u.count])).toEqual([
+      ['熟語A', 2],
+      ['熟語C', 1],
+    ]);
+  });
+  it('セットをほかの科目へ移す・新しい科目も作れる', () => {
+    const p = moveSetToSubject(cat, chunks, eng.id, setB.id, { newSubject: '国語' });
+    expect(p.catalog.subjects.map((s) => [s.name, s.units.map((u) => u.name)])).toEqual([
+      ['英語', ['熟語A']],
+      ['地理', ['地理']],
+      ['国語', ['熟語B']],
+    ]);
+  });
+  it('セットとカードを削除する。空になったチャンクは消す', () => {
+    const p = deleteSet(cat, chunks, geo.id, geo.units[0].id);
+    expect(p.catalog.subjects.map((s) => s.name)).toEqual(['英語']);
+    expect(p.remove).toHaveLength(1);
+    const q = deleteCard(cat, chunks, 'a0');
+    expect(q.catalog.subjects[0].units[0].count).toBe(1);
+  });
+  it('並びを動かす', () => {
+    expect(moveSetOrder(cat, eng.id, setB.id, -1).subjects[0].units.map((u) => u.name)).toEqual(['熟語B', '熟語A']);
+    expect(moveSetOrder(cat, eng.id, setA.id, -1)).toBe(cat);
+  });
+  it('1枚だけ編集しても並びは変わらない', () => {
+    const row: ImportRow = { line: 2, id: 'g0', subject: '地理', unit: '地理', section: '第2問', front: 'gq0', back: 'a', note: '', tags: [] };
+    const p = planImport([row], cat, chunks, { deleteMissing: false, keepOrder: true });
+    expect(p.updated).toBe(1);
+    expect(p.catalog.subjects.map((s) => s.name)).toEqual(['英語', '地理']);
+  });
+});
+
+describe('edit names', () => {
+  it('名前の全角記号はそのまま残し、表記ゆれは同じ名前として扱う', () => {
+    const base = planImport(
+      [{ line: 2, id: 'x', subject: '英語', unit: '和文英訳', section: '鉄緑', front: 'q', back: 'a', note: '', tags: [] }],
+      null,
+      {},
+      { deleteMissing: false },
+    );
+    const s = base.catalog.subjects[0];
+    expect(renameSet(base.catalog, s.id, s.units[0].id, '和文英訳（鉄緑・入試）').subjects[0].units[0].name).toBe('和文英訳（鉄緑・入試）');
+    const p = renameSections(base.catalog, base.write, s.id, s.units[0].id, ['鉄緑'], '鉄緑（テーマ英作）');
+    expect(Object.values(p.write).flatMap((c) => c.c)[0].c).toBe('鉄緑（テーマ英作）');
   });
 });

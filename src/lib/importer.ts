@@ -24,7 +24,7 @@ export function normalize(s: string): string {
 const looseKey = (s: string) => normalize(s).replace(/ /g, '').toLowerCase();
 
 /** 表示用：空白だけ整える（全角記号などはそのまま残す） */
-const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
+export const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 export interface ImportRow {
   /** ファイル上の行番号（見出し行が1） */
@@ -221,12 +221,30 @@ function cleanCard(c: CardData): CardData {
   return out;
 }
 
+/** カードの枚数を数え直し、空になった科目・セットを除いた一覧を作る（並びは subjects のまま） */
+export function recount(subjects: SubjectMeta[], chunks: Record<string, ChunkDoc>): Catalog {
+  const counts = new Map<string, number>();
+  for (const ch of Object.values(chunks))
+    for (const c of ch.c) {
+      counts.set(c.s, (counts.get(c.s) ?? 0) + 1);
+      counts.set(c.s + '/' + c.u, (counts.get(c.s + '/' + c.u) ?? 0) + 1);
+    }
+  const out = subjects
+    .map((s) => ({
+      ...s,
+      count: counts.get(s.id) ?? 0,
+      units: s.units.map((u) => ({ ...u, count: counts.get(s.id + '/' + u.id) ?? 0 })).filter((u) => u.count > 0),
+    }))
+    .filter((s) => s.count > 0);
+  return { subjects: out, total: out.reduce((n, s) => n + s.count, 0), updatedAt: Date.now() };
+}
+
 /** 取り込み内容から、Firestore に書き込む内容を計算する（書き込みはしない） */
 export function planImport(
   rows: ImportRow[],
   catalog: Catalog | null,
   chunks: Record<string, ChunkDoc>,
-  opts: { deleteMissing: boolean },
+  opts: { deleteMissing: boolean; keepOrder?: boolean },
 ): ImportPlan {
   // 既存の科目・単元を名前で引けるようにする
   const subjects: SubjectMeta[] = (catalog?.subjects ?? []).map((s) => ({ ...s, units: s.units.map((u) => ({ ...u })) }));
@@ -317,34 +335,23 @@ export function planImport(
     }
   }
 
-  // 件数を数え直し、空になった科目・単元は消す
-  const counts = new Map<string, number>();
-  for (const ch of Object.values(work))
-    for (const c of ch.c) {
-      counts.set(c.s, (counts.get(c.s) ?? 0) + 1);
-      counts.set(c.s + '/' + c.u, (counts.get(c.s + '/' + c.u) ?? 0) + 1);
-    }
-  // 並び順はファイルに出てきた順にそろえる（ファイルにない科目・セットはその後ろに元の順で残す）
+  // 並び順はファイルに出てきた順にそろえる（ファイルにない科目・セットはその後ろに元の順で残す）。
+  // 1枚ずつの編集（keepOrder）では並びを変えない
   const fileOrder = new Map<string, number>();
-  for (const r of rows) {
-    const { s, u } = resolve(r.subject, r.unit);
-    if (!fileOrder.has(s)) fileOrder.set(s, fileOrder.size);
-    if (!fileOrder.has(s + '/' + u)) fileOrder.set(s + '/' + u, fileOrder.size);
+  if (!opts.keepOrder) {
+    for (const r of rows) {
+      const { s, u } = resolve(r.subject, r.unit);
+      if (!fileOrder.has(s)) fileOrder.set(s, fileOrder.size);
+      if (!fileOrder.has(s + '/' + u)) fileOrder.set(s + '/' + u, fileOrder.size);
+    }
   }
   const byFile = <T,>(items: T[], key: (x: T) => string) =>
     items
       .map((x, i) => ({ x, rank: fileOrder.get(key(x)) ?? rows.length * 2 + i }))
       .sort((a, b) => a.rank - b.rank)
       .map((v) => v.x);
-  const outSubjects = byFile(subjects, (s) => s.id)
-    .map((s) => ({
-      ...s,
-      count: counts.get(s.id) ?? 0,
-      units: byFile(s.units, (u) => s.id + '/' + u.id)
-        .map((u) => ({ ...u, count: counts.get(s.id + '/' + u.id) ?? 0 }))
-        .filter((u) => u.count > 0),
-    }))
-    .filter((s) => s.count > 0);
+  const ordered = byFile(subjects, (s) => s.id).map((s) => ({ ...s, units: byFile(s.units, (u) => s.id + '/' + u.id) }));
+  const outCatalog = recount(ordered, work);
 
   const write: Record<string, ChunkDoc> = {};
   const remove: string[] = [];
@@ -353,7 +360,7 @@ export function planImport(
     else if (chunks[id]) remove.push(id);
   }
   return {
-    catalog: { subjects: outSubjects, total: outSubjects.reduce((n, s) => n + s.count, 0), updatedAt: Date.now() },
+    catalog: outCatalog,
     write,
     remove,
     added,
