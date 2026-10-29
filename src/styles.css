@@ -370,13 +370,16 @@ button:focus-visible {
   flex-direction: column;
 }
 
+/* セットの行：左から重要度・名前（と内訳の棒）・今日の枚数・矢印。内訳の数字は行の幅いっぱいに出す */
 .set-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  column-gap: 12px;
+  row-gap: 4px;
   align-items: center;
-  gap: 10px;
   width: 100%;
-  min-height: 56px;
-  padding: 8px 0;
+  min-height: 60px;
+  padding: 10px 0;
   border: none;
   border-top: 1px solid var(--border);
   background: none;
@@ -387,31 +390,105 @@ button:focus-visible {
 
 .set-row:first-child {
   border-top: none;
+  padding-top: 2px;
 }
 
-.set-row:hover .set-name > span:first-child {
-  color: var(--accent);
+.set-row > .imp {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.set-row > .set-due {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
+.set-row > .chev {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  color: var(--text-3);
 }
 
 .set-name {
-  flex: 1;
-  min-width: 0;
+  grid-column: 2;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+@media (hover: hover) {
+  .set-row:hover .set-name {
+    color: var(--accent);
+  }
+}
+
+.set-meta,
+.set-bar {
+  grid-column: 2;
+}
+
+.set-meta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.stackbar.thin {
+  height: 8px;
+}
+
+.set-bar-nums {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-bar-nums i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+
+.set-due {
+  flex: none;
+  min-width: 64px;
   display: flex;
   flex-direction: column;
-  line-height: 1.4;
-  font-size: 15px;
+  align-items: flex-end;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
 }
 
-.chev {
-  color: var(--text-3);
-  flex: none;
-}
-
-.set-pills {
+.set-due-main {
   display: flex;
+  align-items: baseline;
   gap: 4px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+}
+
+.set-due-main .lbl {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.set-due-main b {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.set-due-main b.zero {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.set-due-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 .imp {
@@ -743,20 +820,20 @@ button:focus-visible {
   height: 14px;
 }
 
-.stackbar > div {
+.stackbar > * {
   height: 100%;
   min-width: 0;
 }
 
-.stackbar > div:first-child {
+.stackbar > :first-child {
   border-radius: 4px 0 0 4px;
 }
 
-.stackbar > div:last-child {
+.stackbar > :last-child {
   border-radius: 0 4px 4px 0;
 }
 
-.stackbar > div:only-child {
+.stackbar > :only-child {
   border-radius: 4px;
 }
 
@@ -847,6 +924,10 @@ table.data th.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.due-table {
+  max-width: 460px;
 }
 
 .due-table caption {

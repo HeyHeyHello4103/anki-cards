@@ -16,14 +16,53 @@ export function ImpBadge({ imp }: { imp: Imp }) {
   );
 }
 
-function DuePills({ learn, review, fresh }: { learn: number; review: number; fresh: number }) {
+/** セットの今日の枚数。復習を大きく、新規を小さく出す */
+function SetDue({ learn, review, fresh }: { learn: number; review: number; fresh: number }) {
   const due = learn + review;
   return (
-    <>
-      {due > 0 && <span className="pill due">復習 {due}</span>}
-      {fresh > 0 && <span className="pill">新規 {fresh}</span>}
-      {due === 0 && fresh === 0 && <span className="pill">完了</span>}
-    </>
+    <span className="set-due">
+      <span className="set-due-main">
+        <span className="lbl">復習</span>
+        <b className={due ? '' : 'zero'}>{due}</b>
+      </span>
+      <span className="set-due-sub">{fresh > 0 ? `新規 ${fresh}` : due === 0 ? '今日は完了' : ''}</span>
+    </span>
+  );
+}
+
+type Breakdown = { label: string; n: number; color: string }[];
+
+function breakdown(mature: number, learning: number, unseen: number): Breakdown {
+  return [
+    { label: '定着', n: mature, color: 'var(--viz-mature)' },
+    { label: '学習中', n: learning, color: 'var(--viz-learning)' },
+    { label: '未学習', n: unseen, color: 'var(--viz-track)' },
+  ];
+}
+
+/** 定着・学習中・未学習の内訳の棒（重要度Aのセットに出す） */
+function SetBar({ segs }: { segs: Breakdown }) {
+  return (
+    <span className="set-bar stackbar thin" role="img" aria-label={segs.map((x) => `${x.label}${x.n}枚`).join('、')}>
+      {segs
+        .filter((x) => x.n > 0)
+        .map((x) => (
+          <span key={x.label} style={{ flexGrow: x.n, flexBasis: 0, background: x.color }} />
+        ))}
+    </span>
+  );
+}
+
+function SetBarNums({ segs }: { segs: Breakdown }) {
+  return (
+    <span className="set-bar-nums" aria-hidden="true">
+      {segs.map((x) => (
+        <span key={x.label}>
+          <i style={{ background: x.color }} />
+          {x.label} {x.n}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -65,8 +104,14 @@ export function Home() {
         const cards = byUnit.get(s.id + '/' + u.id) ?? [];
         const imp = impOf(d.settings.imp, s.id, u.id);
         const newLeft = Math.max(0, newLimitFor(d.settings.newPerDay, imp) - newStudiedToday(cards, d.states, now));
-        const mature = cards.filter((c) => levelOf(d.states[c.id]) === 'mature').length;
-        return { unit: u, imp, cards, mature, due: countDue(cards, d.states, now, newLeft) };
+        let mature = 0;
+        let learning = 0;
+        for (const c of cards) {
+          const lv = levelOf(d.states[c.id]);
+          if (lv === 'mature') mature++;
+          else if (lv === 'learning') learning++;
+        }
+        return { unit: u, imp, cards, mature, learning, due: countDue(cards, d.states, now, newLeft) };
       }),
       (x) => x.imp,
     ),
@@ -156,23 +201,27 @@ export function Home() {
         <section className="panel" key={subject.id}>
           <h2>{subject.name}</h2>
           <div className="set-list">
-            {units.map(({ unit, imp, cards, mature, due }) => (
-              <button key={unit.id} className="set-row" onClick={() => go(`/study/u/${subject.id}/${unit.id}`)}>
-                <ImpBadge imp={imp} />
-                <span className="set-name">
-                  <span>{unit.name}</span>
-                  <span className="small muted">
-                    {cards.length}枚・定着{cards.length ? Math.round((mature / cards.length) * 100) : 0}%
-                  </span>
-                </span>
-                <span className="set-pills">
-                  <DuePills learn={due.learn} review={due.review} fresh={due.fresh} />
-                </span>
-                <svg className="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            ))}
+            {units.map(({ unit, imp, cards, mature, learning, due }) => {
+              const segs = breakdown(mature, learning, cards.length - mature - learning);
+              return (
+                <button key={unit.id} className="set-row" onClick={() => go(`/study/u/${subject.id}/${unit.id}`)}>
+                  <ImpBadge imp={imp} />
+                  <span className="set-name">{unit.name}</span>
+                  {imp === 'A' ? (
+                    <SetBar segs={segs} />
+                  ) : (
+                    <span className="set-meta">
+                      {cards.length}枚・定着 {cards.length ? Math.round((mature / cards.length) * 100) : 0}%
+                    </span>
+                  )}
+                  <SetDue learn={due.learn} review={due.review} fresh={due.fresh} />
+                  <svg className="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {imp === 'A' && <SetBarNums segs={segs} />}
+                </button>
+              );
+            })}
           </div>
         </section>
       ))}
