@@ -2,14 +2,27 @@ import { nextStudyDayStart, studyDayStart } from './dates';
 import { levelOf, State } from './scheduler';
 import type { CardData, Imp, SavedState, SubjectSummary } from './types';
 
-/** 学習の範囲。学習は1つのセット（単元）ずつ行う */
-export type Scope = { kind: 'unit' | 'weak'; subject: string; unit: string };
+/** 学習の範囲。学習は1つのセットずつ行い、sections を指定するとその区分だけにしぼる */
+export type Scope = { kind: 'unit' | 'weak'; subject: string; unit: string; sections?: string[] };
 
 export function inScope(card: CardData, scope: Scope): boolean {
-  return card.s === scope.subject && card.u === scope.unit;
+  if (card.s !== scope.subject || card.u !== scope.unit) return false;
+  return !scope.sections || scope.sections.includes(card.c ?? '');
 }
 
-/** 単元の重要度を引くためのキー */
+/** セットの中の区分を、カードの並び順で返す（区分のないカードは '' にまとめる） */
+export function sectionsOf(cards: CardData[]): string[] {
+  const seen = new Set<string>();
+  for (const c of cards) seen.add(c.c ?? '');
+  return [...seen];
+}
+
+/** そのセットを使うか（利用者が「使わない」にしていなければ使う） */
+export function isUsed(use: Record<string, boolean> | undefined, subject: string, unit: string): boolean {
+  return use?.[unitKey(subject, unit)] !== false;
+}
+
+/** セットの重要度などを引くためのキー */
 export const unitKey = (subject: string, unit: string) => `${subject}_${unit}`;
 
 export function impOf(imp: Record<string, Imp> | undefined, subject: string, unit: string): Imp {

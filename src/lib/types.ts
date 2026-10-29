@@ -5,8 +5,10 @@ export interface CardData {
   id: string;
   /** 科目ID */
   s: string;
-  /** 単元ID */
+  /** セット（単元）ID */
   u: string;
+  /** 区分（セットを開いたときに絞り込む単位。例：第1問） */
+  c?: string;
   /** 表（問題） */
   f: string;
   /** 裏（答え） */
@@ -77,14 +79,16 @@ export interface DayAct {
   nw: number;
 }
 
-/** 単元の重要度（利用者ごとに設定。設定していない単元は B） */
+/** セットの重要度（利用者ごとに設定。設定していないセットは B） */
 export type Imp = 'A' | 'B' | 'C';
 
 export interface UserSettings {
   examDate: string | null;
   newPerDay: number;
-  /** 単元ごとの重要度。キーは unitKey(科目ID, 単元ID) */
+  /** セットごとの重要度。キーは unitKey(科目ID, セットID) */
   imp: Record<string, Imp>;
+  /** 使わないセット（false）。書いていないセットは使う */
+  use: Record<string, boolean>;
 }
 
 export interface SubjectSummary {
@@ -114,4 +118,4 @@ export interface MemberDoc {
   addedAt?: number;
 }
 
-export const DEFAULT_SETTINGS: UserSettings = { examDate: null, newPerDay: 20, imp: {} };
+export const DEFAULT_SETTINGS: UserSettings = { examDate: null, newPerDay: 20, imp: {}, use: {} };

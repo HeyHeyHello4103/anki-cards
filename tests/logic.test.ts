@@ -14,7 +14,7 @@ import {
 import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
-import { buildQueue, byImp, countDue, forecast, impOf, interleave, newLimitFor, newStudiedToday, pickNext, unitKey } from '../src/lib/session';
+import { buildQueue, byImp, countDue, forecast, impOf, inScope, interleave, isUsed, newLimitFor, newStudiedToday, pickNext, sectionsOf, unitKey } from '../src/lib/session';
 import type { CardData, SavedState } from '../src/lib/types';
 
 const at = (s: string) => new Date(s).getTime();
@@ -117,6 +117,7 @@ describe('importer', () => {
     id: '',
     subject: '化学',
     unit: '無機',
+    section: '',
     front,
     back,
     note: '',
@@ -177,7 +178,8 @@ describe('importer', () => {
 
     // 書き出したCSVを直して取り込み直す
     const exported = exportRows(first.catalog, cards);
-    exported[1][4] = '1（修正）';
+    expect(exported[0]).toEqual(['ID', '科目', 'セット', '区分', '表', '裏', '解説', 'タグ']);
+    exported[1][5] = '1（修正）';
     const rows2 = table(exported).rows.slice(0, 2);
     const second = planImport(rows2, first.catalog, first.write, { deleteMissing: true });
     expect([second.added, second.updated, second.unchanged, second.deleted]).toEqual([0, 1, 1, 1]);
@@ -186,6 +188,41 @@ describe('importer', () => {
     const fixed = Object.values(second.write).flatMap((c) => c.c).find((c) => c.f === 'a');
     expect(fixed?.b).toBe('1（修正）');
     expect(fixed?.id).toBe(cards.find((c) => c.f === 'a')?.id);
+  });
+  it('区分を取り込み・書き出しでき、セット名の変更でカードは移るがIDは変わらない', () => {
+    const p = table([
+      ['セット', '区分', '科目', '表', '裏'],
+      ['地理 重要事項', '第1問', '地理', 'q1', 'a1'],
+      ['地理 重要事項', '第2問', '地理', 'q2', 'a2'],
+    ]);
+    expect(p.rows.map((r) => r.section)).toEqual(['第1問', '第2問']);
+    const first = planImport(p.rows, null, {}, { deleteMissing: false });
+    const cards = Object.values(first.write).flatMap((c) => c.c);
+    expect(cards.map((c) => c.c)).toEqual(['第1問', '第2問']);
+    const exported = exportRows(first.catalog, cards);
+    expect(exported[1].slice(1, 4)).toEqual(['地理', '地理 重要事項', '第1問']);
+    // セット名を変えて取り込み直すと、カードは新しいセットへ移り、空になった古いセットは消える
+    exported[1][2] = exported[2][2] = '共通テスト地理';
+    const second = planImport(table(exported).rows, first.catalog, first.write, { deleteMissing: false });
+    expect(second.updated).toBe(2);
+    expect(second.catalog.subjects[0].units.map((u) => u.name)).toEqual(['共通テスト地理']);
+    // セットの並びはファイルの順にそろう（取り込み直したときも）
+    const third = planImport(
+      table([
+        ['科目', 'セット', '表', '裏'],
+        ['英語', 'B', 'qb', 'ab'],
+        ['地理', '共通テスト地理', 'qg', 'ag'],
+        ['英語', 'A', 'qa', 'aa'],
+      ]).rows,
+      second.catalog,
+      second.write,
+      { deleteMissing: false },
+    );
+    expect(third.catalog.subjects.map((x) => [x.name, x.units.map((u) => u.name)])).toEqual([
+      ['英語', ['B', 'A']],
+      ['地理', ['共通テスト地理']],
+    ]);
+    expect(Object.values(second.write).flatMap((c) => c.c).map((c) => c.id)).toEqual(cards.map((c) => c.id));
   });
   it('カードが多いとチャンクを分ける', () => {
     const rows = Array.from({ length: MAX_CARDS_PER_CHUNK + 5 }, (_, i) => row(i + 2, `q${i}`, `a${i}`));
@@ -231,6 +268,22 @@ describe('session', () => {
     expect(q.learn).toEqual(['l1']);
     expect(q.main).toEqual(['r2', 'r1', 'r5', 'r4', 'n1', 'r3', 'n2']);
     expect(countDue(cards, states, now, 2)).toEqual({ learn: 1, review: 5, fresh: 2, unseen: 3 });
+  });
+  it('区分でしぼり込む・使わないセット', () => {
+    const cs = [
+      { ...card('1', 's', 'u'), c: '第1問' },
+      { ...card('2', 's', 'u'), c: '第2問' },
+      { ...card('3', 's', 'u'), c: '第1問' },
+      card('4', 's', 'v'),
+    ];
+    expect(sectionsOf(cs.slice(0, 3))).toEqual(['第1問', '第2問']);
+    expect(sectionsOf([card('9')])).toEqual(['']);
+    const scope = { kind: 'unit' as const, subject: 's', unit: 'u', sections: ['第1問'] };
+    expect(cs.filter((c) => inScope(c, scope)).map((c) => c.id)).toEqual(['1', '3']);
+    expect(cs.filter((c) => inScope(c, { kind: 'unit', subject: 's', unit: 'u' })).map((c) => c.id)).toEqual(['1', '2', '3']);
+    expect(isUsed({ [unitKey('s', 'u')]: false }, 's', 'u')).toBe(false);
+    expect(isUsed({ [unitKey('s', 'u')]: true }, 's', 'u')).toBe(true);
+    expect(isUsed(undefined, 's', 'v')).toBe(true);
   });
   it('セットの重要度と新規カードの上限', () => {
     const imp = { [unitKey('s1', 'u1')]: 'A' as const, [unitKey('s1', 'u3')]: 'C' as const };

@@ -393,7 +393,55 @@ button:focus-visible {
   padding-top: 2px;
 }
 
-.set-row > .imp {
+.set-row > .section-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.section-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.section-row:first-child {
+  border-top: none;
+}
+
+.section-row input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.section-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.section-nums {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.section-nums .due {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.imp {
   grid-column: 1;
   grid-row: 1 / span 2;
 }
@@ -552,6 +600,10 @@ button:focus-visible {
 .imp-row .name {
   flex: 1;
   min-width: 0;
+}
+
+.imp-row.off .name span {
+  color: var(--text-3);
 }
 
 /* ---------- 学習 ---------- */

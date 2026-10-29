@@ -5,7 +5,7 @@ import { daysUntil } from '../lib/dates';
 import { auth, db } from '../lib/firebase';
 import { parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
 import { maxIntervalFor } from '../lib/scheduler';
-import { impOf, newLimitFor, summarize, unitKey } from '../lib/session';
+import { impOf, isUsed, newLimitFor, summarize, unitKey } from '../lib/session';
 import { useData } from '../lib/store';
 import type { Imp } from '../lib/types';
 
@@ -23,40 +23,72 @@ function ImpChoice({ value, onChange, label }: { value: Imp | null; onChange: (i
   );
 }
 
-/** セット（単元）ごとの重要度。押すとすぐ保存する */
-function ImpSettings() {
+/** 使うセットとセットごとの重要度。押すとすぐ保存する */
+function SetSettings() {
   const d = useData();
-  const save = (keys: string[], imp: Imp) => {
-    const patch: Record<string, Imp> = {};
-    for (const k of keys) patch[k] = imp;
-    setDoc(doc(db, 'users', d.uid), { settings: { imp: patch } }, { merge: true }).catch(() => {});
+  const patch = (field: 'imp' | 'use', keys: string[], value: Imp | boolean) => {
+    const values: Record<string, Imp | boolean> = {};
+    for (const k of keys) values[k] = value;
+    setDoc(doc(db, 'users', d.uid), { settings: { [field]: values } }, { merge: true }).catch(() => {});
   };
   if (!d.catalog || d.catalog.subjects.length === 0) return null;
   const base = d.settings.newPerDay;
   return (
     <section className="panel stack">
-      <h2 style={{ margin: 0 }}>セットごとの重要度</h2>
+      <h2 style={{ margin: 0 }}>使うセットと重要度</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        ホームでは重要度の高いセットから並びます。1日の新規カードの上限は A {newLimitFor(base, 'A')}枚・B {newLimitFor(base, 'B')}枚・C{' '}
-        {newLimitFor(base, 'C')}枚です。
+        チェックを外したセットは、ホームや統計に出なくなります（学習記録は消えません）。ホームでは重要度の高いセットから並び、1日の新規カードの上限は A{' '}
+        {newLimitFor(base, 'A')}枚・B {newLimitFor(base, 'B')}枚・C {newLimitFor(base, 'C')}枚です。
       </p>
       {d.catalog.subjects.map((s) => {
-        const imps = s.units.map((u) => impOf(d.settings.imp, s.id, u.id));
-        const same = imps.every((x) => x === imps[0]) ? imps[0] : null;
+        const keys = s.units.map((u) => unitKey(s.id, u.id));
+        const used = s.units.filter((u) => isUsed(d.settings.use, s.id, u.id));
+        const imps = used.map((u) => impOf(d.settings.imp, s.id, u.id));
+        const same = imps.length && imps.every((x) => x === imps[0]) ? imps[0] : null;
         return (
           <div key={s.id}>
             <div className="row" style={{ marginBottom: 4 }}>
-              <b>{s.name}</b>
+              <label className="check" style={{ alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={used.length === s.units.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = used.length > 0 && used.length < s.units.length;
+                  }}
+                  onChange={(e) => patch('use', keys, e.target.checked)}
+                />
+                <b>{s.name}</b>
+              </label>
               <span className="spacer" />
-              <span className="small muted">まとめて</span>
-              <ImpChoice value={same} label={`${s.name}のセットをまとめて設定`} onChange={(imp) => save(s.units.map((u) => unitKey(s.id, u.id)), imp)} />
+              {used.length > 1 && (
+                <>
+                  <span className="small muted">まとめて</span>
+                  <ImpChoice
+                    value={same}
+                    label={`${s.name}のセットの重要度をまとめて設定`}
+                    onChange={(imp) => patch('imp', used.map((u) => unitKey(s.id, u.id)), imp)}
+                  />
+                </>
+              )}
             </div>
-            {s.units.map((u) => (
-              <div className="imp-row" key={u.id}>
-                <span className="name">{u.name}</span>
-                <ImpChoice value={impOf(d.settings.imp, s.id, u.id)} label={`${u.name}の重要度`} onChange={(imp) => save([unitKey(s.id, u.id)], imp)} />
-              </div>
-            ))}
+            {s.units.map((u) => {
+              const on = isUsed(d.settings.use, s.id, u.id);
+              return (
+                <div className={`imp-row ${on ? '' : 'off'}`} key={u.id}>
+                  <label className="check name" style={{ alignItems: 'center' }}>
+                    <input type="checkbox" checked={on} onChange={(e) => patch('use', [unitKey(s.id, u.id)], e.target.checked)} />
+                    <span>{u.name}</span>
+                  </label>
+                  {on && (
+                    <ImpChoice
+                      value={impOf(d.settings.imp, s.id, u.id)}
+                      label={`${u.name}の重要度`}
+                      onChange={(imp) => patch('imp', [unitKey(s.id, u.id)], imp)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -194,7 +226,7 @@ export function Settings() {
         </div>
       </form>
 
-      <ImpSettings />
+      <SetSettings />
 
       <ProgressImport />
 

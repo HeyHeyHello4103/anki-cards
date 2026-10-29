@@ -42,7 +42,8 @@ export function Admin({ tab }: { tab: string }) {
 const FIELD_LABEL: Record<Field, string> = {
   id: 'ID',
   subject: '科目',
-  unit: '単元',
+  unit: 'セット',
+  section: '区分',
   front: '表',
   back: '裏',
   note: '解説',
@@ -144,7 +145,7 @@ function Cards() {
               <thead>
                 <tr>
                   <th>科目</th>
-                  <th className="num">単元数</th>
+                  <th className="num">セット数</th>
                   <th className="num">カード数</th>
                 </tr>
               </thead>
@@ -193,7 +194,7 @@ function Cards() {
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>CSVを取り込む</h2>
         <p className="small muted" style={{ margin: 0 }}>
-          1行目に見出し（ID・科目・単元・表・裏・解説・タグ）を入れてください。表と裏は必須です。数式は <code>$x^2$</code>、化学式は{' '}
+          1行目に見出し（ID・科目・セット・区分・表・裏・解説・タグ）を入れてください。表と裏は必須です。区分を入れると、セットを開いたときにその区分で絞り込めます。数式は <code>$x^2$</code>、化学式は{' '}
           <code>{'\\ce{H2O}'}</code> のように書けます。Excelで保存したCSV（Shift_JIS・UTF-8のどちらも可）やタブ区切りのファイルも読めます。
         </p>
         <div>
@@ -228,7 +229,7 @@ function Cards() {
                 )}
                 {parsed.columns.unit === undefined && (
                   <label className="field" style={{ flex: 1, minWidth: 140 }}>
-                    単元名（単元の列がないため。空欄なら「全般」）
+                    セット名（セットの列がないため。空欄なら「全般」）
                     <input type="text" value={defaults.unit} onChange={(e) => setDefaults({ ...defaults, unit: e.target.value })} />
                   </label>
                 )}

@@ -170,7 +170,7 @@ export function DataProvider(props: { uid: string; email: string; displayName: s
     sync,
     chunkOf: (id) => chunkOf.get(id),
     subjectName: (sid) => names.get(sid) ?? '（削除された科目）',
-    unitName: (sid, u) => names.get(sid + '/' + u) ?? '（削除された単元）',
+    unitName: (sid, u) => names.get(sid + '/' + u) ?? '（削除されたセット）',
   };
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 }

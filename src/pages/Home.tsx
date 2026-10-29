@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 import { dayKey, daysUntil } from '../lib/dates';
 import { go } from '../lib/router';
 import { levelOf } from '../lib/scheduler';
-import { byImp, countDue, impOf, newLimitFor, newStudiedToday } from '../lib/session';
+import { byImp, countDue, impOf, isUsed, newLimitFor, newStudiedToday } from '../lib/session';
 import { useData } from '../lib/store';
-import type { CardData, Imp } from '../lib/types';
+import type { CardData, Imp, UnitMeta } from '../lib/types';
 
 const IMPS: Imp[] = ['A', 'B', 'C'];
 
@@ -96,26 +96,34 @@ export function Home() {
     );
   }
 
+  // 利用者が「使わない」にしたセットは出さない（科目のセットが全部「使わない」なら科目ごと出さない）
+  const hiddenCount = d.catalog.subjects.reduce(
+    (n, s) => n + s.units.filter((u) => !isUsed(d.settings.use, s.id, u.id)).length,
+    0,
+  );
   // セットごとの今日の枚数（新規の上限はセットごと・重要度で変わる）
-  const sets = d.catalog.subjects.map((s) => ({
-    subject: s,
-    units: byImp(
-      s.units.map((u) => {
-        const cards = byUnit.get(s.id + '/' + u.id) ?? [];
-        const imp = impOf(d.settings.imp, s.id, u.id);
-        const newLeft = Math.max(0, newLimitFor(d.settings.newPerDay, imp) - newStudiedToday(cards, d.states, now));
-        let mature = 0;
-        let learning = 0;
-        for (const c of cards) {
-          const lv = levelOf(d.states[c.id]);
-          if (lv === 'mature') mature++;
-          else if (lv === 'learning') learning++;
-        }
-        return { unit: u, imp, cards, mature, learning, due: countDue(cards, d.states, now, newLeft) };
-      }),
-      (x) => x.imp,
-    ),
-  }));
+  const setRow = (subjectId: string, u: UnitMeta) => {
+    const cards = byUnit.get(subjectId + '/' + u.id) ?? [];
+    const imp = impOf(d.settings.imp, subjectId, u.id);
+    const newLeft = Math.max(0, newLimitFor(d.settings.newPerDay, imp) - newStudiedToday(cards, d.states, now));
+    let mature = 0;
+    let learning = 0;
+    for (const c of cards) {
+      const lv = levelOf(d.states[c.id]);
+      if (lv === 'mature') mature++;
+      else if (lv === 'learning') learning++;
+    }
+    return { unit: u, imp, cards, mature, learning, due: countDue(cards, d.states, now, newLeft) };
+  };
+  const sets = d.catalog.subjects
+    .map((subject) => ({
+      subject,
+      units: byImp(
+        subject.units.filter((u) => isUsed(d.settings.use, subject.id, u.id)).map((u) => setRow(subject.id, u)),
+        (x) => x.imp,
+      ),
+    }))
+    .filter((x) => x.units.length > 0);
   const totals = sets
     .flatMap((s) => s.units)
     .reduce((t, u) => ({ due: t.due + u.due.learn + u.due.review, fresh: t.fresh + u.due.fresh }), { due: 0, fresh: 0 });
@@ -225,6 +233,19 @@ export function Home() {
           </div>
         </section>
       ))}
+      {sets.length === 0 && (
+        <div className="panel stack">
+          <h2 style={{ margin: 0 }}>使うセットが選ばれていません</h2>
+          <a className="btn primary" href="#/settings">
+            設定で使うセットを選ぶ
+          </a>
+        </div>
+      )}
+      {hiddenCount > 0 && (
+        <p className="small muted center" style={{ margin: 0 }}>
+          使わないセットが{hiddenCount}件あります（<a href="#/settings">設定</a>で変えられます）
+        </p>
+      )}
       {d.isAdmin ? null : (
         <p className="small muted center" style={{ margin: 0 }}>
           学習状況の概要（回答数・定着率など）は管理者も確認できます。

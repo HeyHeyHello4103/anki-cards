@@ -3,7 +3,7 @@ import { ForecastChart, Heatmap, MasteryBars, type MasteryRow } from '../compone
 import { addDays, dayKey, formatDayJa, parseYmd } from '../lib/dates';
 import { plainText } from '../lib/render';
 import { levelOf } from '../lib/scheduler';
-import { forecast } from '../lib/session';
+import { forecast, isUsed } from '../lib/session';
 import { useData } from '../lib/store';
 import type { DayAct } from '../lib/types';
 
@@ -25,10 +25,13 @@ export function Stats() {
   const now = Date.now();
   const today = dayKey(now);
 
+  // 統計は、利用者が使っているセットのカードだけで数える
+  const cards = useMemo(() => d.cards.filter((c) => isUsed(d.settings.use, c.s, c.u)), [d.cards, d.settings.use]);
+
   const rows: MasteryRow[] = useMemo(() => {
     const m = new Map<string, MasteryRow>();
     for (const s of d.catalog?.subjects ?? []) m.set(s.id, { id: s.id, name: s.name, total: 0, learning: 0, mature: 0 });
-    for (const c of d.cards) {
+    for (const c of cards) {
       const r = m.get(c.s);
       if (!r) continue;
       r.total++;
@@ -37,16 +40,16 @@ export function Stats() {
       else if (lv === 'learning') r.learning++;
     }
     return [...m.values()].filter((r) => r.total > 0);
-  }, [d.catalog, d.cards, d.states]);
+  }, [d.catalog, cards, d.states]);
 
-  const fc = forecast(d.cards, d.states, now);
+  const fc = forecast(cards, d.states, now);
   const fcKeys = fc.map((_, i) => addDays(today, i));
   const fcLabels = fcKeys.map((k, i) => (i === 0 ? '今日' : i === 1 ? '明日' : WEEKDAYS[parseYmd(k).getDay()]));
 
   // 苦手カード（覚えたあとで忘れたカード）をセットごとにまとめ、多いセットから並べる
   const weakSets = useMemo(() => {
     const m = new Map<string, { s: string; u: string; cards: typeof d.cards }>();
-    for (const c of d.cards) {
+    for (const c of cards) {
       if ((d.states[c.id]?.l ?? 0) === 0) continue;
       const k = c.s + '/' + c.u;
       const g = m.get(k) ?? { s: c.s, u: c.u, cards: [] };
@@ -56,7 +59,7 @@ export function Stats() {
     return [...m.values()]
       .map((g) => ({ ...g, cards: g.cards.sort((a, b) => d.states[b.id].l - d.states[a.id].l) }))
       .sort((a, b) => b.cards.length - a.cards.length);
-  }, [d.cards, d.states]);
+  }, [cards, d.states]);
 
   const mature = rows.reduce((n, r) => n + r.mature, 0);
   const total = rows.reduce((n, r) => n + r.total, 0);

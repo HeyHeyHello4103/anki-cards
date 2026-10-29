@@ -1,20 +1,32 @@
 import { useAuthState, emailOf } from './lib/auth';
 import { configured } from './lib/firebase';
 import { useRoute } from './lib/router';
-import type { Scope } from './lib/session';
+import { sectionsOf, type Scope } from './lib/session';
 import { DataProvider, useData } from './lib/store';
 import { Admin } from './pages/Admin';
 import { Home } from './pages/Home';
 import { Login, NotMember, VerifyEmail } from './pages/Login';
+import { SetStart } from './pages/SetStart';
 import { Settings } from './pages/Settings';
 import { Stats } from './pages/Stats';
 import { Study } from './pages/Study';
 
-/** #/study/u/{科目}/{単元} または #/study/weak/{科目}/{単元} */
-function scopeFrom(route: string[]): Scope | null {
-  const [, kind, subject, unit] = route;
-  if ((kind === 'u' || kind === 'weak') && subject && unit) return { kind: kind === 'u' ? 'unit' : 'weak', subject, unit };
-  return null;
+/**
+ * #/study/u/{科目}/{セット}/go/{区分}  … 学習（区分は all か、区分の番号をカンマ区切り）
+ * #/study/weak/{科目}/{セット}          … 苦手カードの復習
+ */
+function scopeFrom(route: string[], sectionsFor: (subject: string, unit: string) => string[]): Scope | null {
+  const [, kind, subject, unit, goWord, sel] = route;
+  if (!subject || !unit) return null;
+  if (kind === 'weak') return { kind: 'weak', subject, unit };
+  if (kind !== 'u' || goWord !== 'go') return null;
+  if (!sel || sel === 'all') return { kind: 'unit', subject, unit };
+  const all = sectionsFor(subject, unit);
+  const sections = sel
+    .split(',')
+    .map((i) => all[Number(i)])
+    .filter((x): x is string => x !== undefined);
+  return { kind: 'unit', subject, unit, sections: sections.length ? sections : undefined };
 }
 
 function Shell() {
@@ -31,7 +43,10 @@ function Shell() {
   }
   if (!d.ready) return <div className="spinner" aria-label="読み込み中" />;
 
-  const scope = page === 'study' ? scopeFrom(route) : null;
+  const scope =
+    page === 'study'
+      ? scopeFrom(route, (subject, unit) => sectionsOf(d.cards.filter((c) => c.s === subject && c.u === unit)))
+      : null;
   if (scope) {
     return (
       <div className="app">
@@ -64,7 +79,9 @@ function Shell() {
         </nav>
       </header>
       <main>
-        {page === 'stats' ? (
+        {page === 'study' && route[1] === 'u' && route[2] && route[3] ? (
+          <SetStart key={route[2] + '/' + route[3]} subject={route[2]} unit={route[3]} />
+        ) : page === 'stats' ? (
           <Stats />
         ) : page === 'settings' ? (
           <Settings />

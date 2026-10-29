@@ -1,19 +1,20 @@
 import { checkMath } from './render';
 import type { CardData, Catalog, ChunkDoc, SubjectMeta } from './types';
 
-export type Field = 'id' | 'subject' | 'unit' | 'front' | 'back' | 'note' | 'tags';
+export type Field = 'id' | 'subject' | 'unit' | 'section' | 'front' | 'back' | 'note' | 'tags';
 
 const HEADER_ALIASES: Record<Field, string[]> = {
   id: ['id', 'カードid'],
   subject: ['科目', '教科', 'subject'],
-  unit: ['単元', '章', '分野', 'デッキ', 'unit', 'deck', 'chapter'],
+  unit: ['セット', '単元', '章', '分野', 'デッキ', 'set', 'unit', 'deck', 'chapter'],
+  section: ['区分', '小分類', 'セクション', 'section'],
   front: ['表', '表面', 'おもて', '問題', '問', '質問', 'front', 'question'],
   back: ['裏', '裏面', 'うら', '答え', '答', '解答', '正解', 'back', 'answer'],
   note: ['解説', '補足', 'メモ', '備考', 'note', 'notes', 'explanation'],
   tags: ['タグ', 'tag', 'tags'],
 };
 
-export const CSV_HEADER = ['ID', '科目', '単元', '表', '裏', '解説', 'タグ'];
+export const CSV_HEADER = ['ID', '科目', 'セット', '区分', '表', '裏', '解説', 'タグ'];
 
 /** 表記ゆれを吸収するための正規化（全角半角・空白の違いを無視） */
 export function normalize(s: string): string {
@@ -31,6 +32,8 @@ export interface ImportRow {
   id: string;
   subject: string;
   unit: string;
+  /** 区分（空ならなし） */
+  section: string;
   front: string;
   back: string;
   note: string;
@@ -84,6 +87,7 @@ export function readRows(table: string[][], defaults: { subject: string; unit: s
     id: cell(r, 'id').trim(),
     subject: tidy(cell(r, 'subject')) || tidy(defaults.subject),
     unit: tidy(cell(r, 'unit')) || tidy(defaults.unit) || '全般',
+    section: tidy(cell(r, 'section')),
     front: cell(r, 'front').trim(),
     back: cell(r, 'back').trim(),
     note: cell(r, 'note').trim(),
@@ -173,7 +177,7 @@ export function validateRows(rows: ImportRow[], existing: Map<string, { card: Ca
   for (const g of nameGroups(rows.map((r) => r.subject)))
     add('warn', '表記ゆれ', [], `科目名の表記が揺れています: ${[...g].map((s) => `「${s}」`).join(' ')}`);
   for (const g of nameGroups(rows.map((r) => `${r.subject} / ${r.unit}`)))
-    add('warn', '表記ゆれ', [], `単元名の表記が揺れています: ${[...g].map((s) => `「${s}」`).join(' ')}`);
+    add('warn', '表記ゆれ', [], `セット名の表記が揺れています: ${[...g].map((s) => `「${s}」`).join(' ')}`);
 
   // 要修正を先に、あとは行番号の順に並べる
   const first = (i: Issue) => (i.lines.length ? Math.min(...i.lines) : Number.MAX_SAFE_INTEGER);
@@ -206,11 +210,12 @@ export interface ImportPlan {
 }
 
 const sameCard = (a: CardData, b: CardData) =>
-  a.s === b.s && a.u === b.u && a.f === b.f && a.b === b.b && (a.n ?? '') === (b.n ?? '') &&
+  a.s === b.s && a.u === b.u && (a.c ?? '') === (b.c ?? '') && a.f === b.f && a.b === b.b && (a.n ?? '') === (b.n ?? '') &&
   (a.t ?? []).join(' ') === (b.t ?? []).join(' ');
 
 function cleanCard(c: CardData): CardData {
   const out: CardData = { id: c.id, s: c.s, u: c.u, f: c.f, b: c.b };
+  if (c.c) out.c = c.c;
   if (c.n) out.n = c.n;
   if (c.t && c.t.length) out.t = c.t;
   return out;
@@ -257,7 +262,7 @@ export function planImport(
 
   for (const r of rows) {
     const { s, u } = resolve(r.subject, r.unit);
-    const next: CardData = cleanCard({ id: r.id, s, u, f: r.front, b: r.back, n: r.note, t: r.tags });
+    const next: CardData = cleanCard({ id: r.id, s, u, c: r.section, f: r.front, b: r.back, n: r.note, t: r.tags });
     const loc = r.id ? where.get(r.id) : undefined;
     if (loc) {
       seen.add(r.id);
@@ -319,11 +324,25 @@ export function planImport(
       counts.set(c.s, (counts.get(c.s) ?? 0) + 1);
       counts.set(c.s + '/' + c.u, (counts.get(c.s + '/' + c.u) ?? 0) + 1);
     }
-  const outSubjects = subjects
+  // 並び順はファイルに出てきた順にそろえる（ファイルにない科目・セットはその後ろに元の順で残す）
+  const fileOrder = new Map<string, number>();
+  for (const r of rows) {
+    const { s, u } = resolve(r.subject, r.unit);
+    if (!fileOrder.has(s)) fileOrder.set(s, fileOrder.size);
+    if (!fileOrder.has(s + '/' + u)) fileOrder.set(s + '/' + u, fileOrder.size);
+  }
+  const byFile = <T,>(items: T[], key: (x: T) => string) =>
+    items
+      .map((x, i) => ({ x, rank: fileOrder.get(key(x)) ?? rows.length * 2 + i }))
+      .sort((a, b) => a.rank - b.rank)
+      .map((v) => v.x);
+  const outSubjects = byFile(subjects, (s) => s.id)
     .map((s) => ({
       ...s,
       count: counts.get(s.id) ?? 0,
-      units: s.units.map((u) => ({ ...u, count: counts.get(s.id + '/' + u.id) ?? 0 })).filter((u) => u.count > 0),
+      units: byFile(s.units, (u) => s.id + '/' + u.id)
+        .map((u) => ({ ...u, count: counts.get(s.id + '/' + u.id) ?? 0 }))
+        .filter((u) => u.count > 0),
     }))
     .filter((s) => s.count > 0);
 
@@ -353,14 +372,14 @@ export function exportRows(catalog: Catalog | null, cards: CardData[]): string[]
   }
   return [
     CSV_HEADER,
-    ...cards.map((c) => [c.id, names.get(c.s) ?? '', names.get(c.s + '/' + c.u) ?? '', c.f, c.b, c.n ?? '', (c.t ?? []).join(' ')]),
+    ...cards.map((c) => [c.id, names.get(c.s) ?? '', names.get(c.s + '/' + c.u) ?? '', c.c ?? '', c.f, c.b, c.n ?? '', (c.t ?? []).join(' ')]),
   ];
 }
 
 export const TEMPLATE_ROWS: string[][] = [
   CSV_HEADER,
-  ['', '数学', '二次関数', '$y=x^2-4x+3$ の頂点の座標は？', '$(2,\\,-1)$', '$y=(x-2)^2-1$ と平方完成する', ''],
-  ['', '化学', '化学反応式', 'メタン $\\ce{CH4}$ が完全燃焼するときの化学反応式は？', '$\\ce{CH4 + 2O2 -> CO2 + 2H2O}$', '', ''],
-  ['', '日本史', '鎌倉時代', '1221年、後鳥羽上皇が鎌倉幕府を倒そうとして起こした戦いは？', '承久の乱', '', '頻出'],
-  ['', '英語', '英単語', 'abandon', '（動）〜を捨てる、放棄する', '', ''],
+  ['', '数学', '数学Ⅰ 公式', '二次関数', '$y=x^2-4x+3$ の頂点の座標は？', '$(2,\\,-1)$', '$y=(x-2)^2-1$ と平方完成する', ''],
+  ['', '化学', '化学反応式', '燃焼', 'メタン $\\ce{CH4}$ が完全燃焼するときの化学反応式は？', '$\\ce{CH4 + 2O2 -> CO2 + 2H2O}$', '', ''],
+  ['', '日本史', '日本史 一問一答', '鎌倉時代', '1221年、後鳥羽上皇が鎌倉幕府を倒そうとして起こした戦いは？', '承久の乱', '', '頻出'],
+  ['', '英語', '英単語', '', 'abandon', '（動）〜を捨てる、放棄する', '', ''],
 ];

@@ -4,7 +4,7 @@ import { Rich } from '../components/Rich';
 import { dayKey, nextStudyDayStart } from '../lib/dates';
 import { go } from '../lib/router';
 import { formatInterval, GRADES, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
-import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, pickNext, type Scope } from '../lib/session';
+import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, pickNext, sectionsOf, type Scope } from '../lib/session';
 import { useData } from '../lib/store';
 import type { SavedState } from '../lib/types';
 
@@ -82,9 +82,11 @@ export function Study({ scope }: { scope: Scope }) {
 
   const [session, setSession] = useState<Session>(() => {
     const now = Date.now();
-    const cards = d.cards.filter((c) => inScope(c, scope));
+    // 新規カードの上限はセット全体で数え、出すのは選んだ区分のカードだけ
+    const setCards = d.cards.filter((c) => c.s === scope.subject && c.u === scope.unit);
+    const cards = setCards.filter((c) => inScope(c, scope));
     const limit = newLimitFor(d.settings.newPerDay, impOf(d.settings.imp, scope.subject, scope.unit));
-    const newLeft = Math.max(0, limit - newStudiedToday(cards, d.states, now));
+    const newLeft = Math.max(0, limit - newStudiedToday(setCards, d.states, now));
     const q = buildQueue(cards, d.states, now, newLeft, scope.kind === 'weak' ? 'weak' : 'due');
     const learn = q.learn.map((id) => ({ id, due: d.states[id].due }));
     return pickNext(
@@ -97,6 +99,11 @@ export function Study({ scope }: { scope: Scope }) {
 
   // 画面を離れるときに保存
   useEffect(() => () => d.sync.flush(), [d.sync]);
+
+  const hasSections = useMemo(
+    () => sectionsOf(d.cards.filter((c) => c.s === scope.subject && c.u === scope.unit)).length > 1,
+    [d.cards, scope.subject, scope.unit],
+  );
 
   const showWaiting = useCallback((force: boolean) => setSession((s) => pickNext(s, Date.now(), force)), []);
 
@@ -230,6 +237,11 @@ export function Study({ scope }: { scope: Scope }) {
                 最後の回答を取り消す
               </button>
             )}
+            {hasSections && (
+              <a className="btn" href={`#/study/u/${scope.subject}/${scope.unit}`}>
+                ほかの区分を選ぶ
+              </a>
+            )}
             <a className="btn primary" href="#/">
               ホームへ
             </a>
@@ -239,7 +251,7 @@ export function Study({ scope }: { scope: Scope }) {
     );
   }
 
-  const crumb = `${d.subjectName(card.s)} › ${d.unitName(card.s, card.u)}`;
+  const crumb = `${d.subjectName(card.s)} › ${d.unitName(card.s, card.u)}${card.c ? ` › ${card.c}` : ''}`;
 
   return (
     <div className="study">
