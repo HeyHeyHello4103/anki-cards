@@ -1,9 +1,16 @@
 // 一度開いた画面ファイルを端末に保存し、電波がなくても開けるようにする。
 // カードと学習記録は Firebase 側の仕組みで端末に保存される。
-const CACHE = 'anki-cards-v1';
+const CACHE = 'anki-cards-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  ),
+);
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
@@ -11,10 +18,11 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // ページ本体は最新を優先し、つながらなければ保存したものを使う
+  // ページ本体は最新を優先し、つながらなければ保存したものを使う。
+  // ブラウザのキャッシュに古いページが残っていても、必ずサーバーに確認する
   if (req.mode === 'navigate') {
     e.respondWith(
-      fetch(req)
+      fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('./', copy));
