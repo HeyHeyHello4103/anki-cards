@@ -4,11 +4,12 @@ import { Rich } from '../components/Rich';
 import { dayKey, nextStudyDayStart } from '../lib/dates';
 import { go } from '../lib/router';
 import { formatInterval, GRADES, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
-import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, type Scope } from '../lib/session';
+import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, pickNext, type Scope } from '../lib/session';
 import { useData } from '../lib/store';
 import type { SavedState } from '../lib/types';
 
 interface Session {
+  last?: string | null;
   main: string[];
   /** このセッション中にもう一度出す（学習中の）カード */
   learn: { id: string; due: number }[];
@@ -26,14 +27,50 @@ interface HistoryItem {
   before: Session;
 }
 
-function pickNext(s: Session, now: number): Session {
-  const learn = [...s.learn].sort((a, b) => a.due - b.due);
-  if (learn.length && learn[0].due <= now) {
-    return { ...s, learn: learn.slice(1), current: learn[0].id, revealed: false };
-  }
-  if (s.main.length) return { ...s, learn, main: s.main.slice(1), current: s.main[0], revealed: false };
-  if (learn.length) return { ...s, learn: learn.slice(1), current: learn[0].id, revealed: false };
-  return { ...s, learn, current: null, revealed: false };
+/** 残りが覚えている途中のカードだけのとき、次のカードが出るまで待つ画面 */
+function Waiting({ session, onShow, onUndo }: { session: Session; onShow: (force: boolean) => void; onUndo: () => void }) {
+  const next = Math.min(...session.learn.map((x) => x.due));
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (now >= next) onShow(false);
+  }, [now, next, onShow]);
+  const left = Math.max(0, Math.ceil((next - now) / 1000));
+  return (
+    <div className="study">
+      <div className="panel stack center" style={{ marginTop: 24 }}>
+        <h2>少し時間をおいて、もう一度出します</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          覚えている途中のカードがあと{session.learn.length}枚あります。間をあけたほうが記憶に残るので、時間になったら自動で出します。
+        </p>
+        <div className="count" style={{ alignItems: 'center' }}>
+          <b>
+            {Math.floor(left / 60)}分{String(left % 60).padStart(2, '0')}秒
+          </b>
+          <span>次のカードまで</span>
+        </div>
+        <div className="row" style={{ justifyContent: 'center' }}>
+          <button className="btn" onClick={() => onShow(true)}>
+            今すぐ出す
+          </button>
+          <a className="btn primary" href="#/">
+            ここで終わる
+          </a>
+        </div>
+        <p className="small muted" style={{ margin: 0 }}>
+          終わっても記録は保存されます。残りのカードは、次にこのセットを開いたときに出ます。
+        </p>
+        <div className="small">
+          <button className="link-btn" onClick={onUndo}>
+            最後の回答を取り消す
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const kindOf = (st: SavedState | undefined): 'new' | 'learn' | 'review' =>
@@ -60,6 +97,8 @@ export function Study({ scope }: { scope: Scope }) {
 
   // 画面を離れるときに保存
   useEffect(() => () => d.sync.flush(), [d.sync]);
+
+  const showWaiting = useCallback((force: boolean) => setSession((s) => pickNext(s, Date.now(), force)), []);
 
   const card = session.current ? d.cardById.get(session.current) : undefined;
   const prev = session.current ? d.states[session.current] : undefined;
@@ -93,6 +132,7 @@ export function Study({ scope }: { scope: Scope }) {
         pickNext(
           {
             ...session,
+            last: id,
             learn: stillLearning ? [...session.learn, { id, due: next.due }] : session.learn,
             answered: session.answered + 1,
             tally: { ...session.tally, [key]: session.tally[key] + 1 },
@@ -143,6 +183,10 @@ export function Study({ scope }: { scope: Scope }) {
   if (curKind) remain[curKind === 'new' ? 'new' : curKind === 'learn' ? 'learn' : 'review']++;
   const left = remain.new + remain.learn + remain.review;
   const progress = startTotal ? Math.min(1, session.answered / (session.answered + left)) : 1;
+
+  if (!session.current && session.learn.length > 0) {
+    return <Waiting session={session} onShow={showWaiting} onUndo={undo} />;
+  }
 
   if (!session.current || !card) {
     return (

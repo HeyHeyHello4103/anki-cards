@@ -105,6 +105,36 @@ export function buildQueue(
   return { learn: learn.map((x) => x.id), main: interleave(review.map((x) => x.id), fresh, 4), freshCount: fresh.length };
 }
 
+interface QueueState {
+  main: string[];
+  /** このセッション中にもう一度出す（覚えている途中の）カードと、出してよい時刻 */
+  learn: { id: string; due: number }[];
+  current: string | null;
+  revealed: boolean;
+  /** 直前に答えたカード */
+  last?: string | null;
+}
+
+/**
+ * 次に出すカードを選ぶ。
+ * 覚えている途中のカードは決められた時間（1分・6分・10分など）がたってから出す。
+ * 残りが途中のカードだけなら current を null にして待つ（force のときだけ時間前でも出す）。
+ * 時間前にすぐ出し直すと、「あいまい」を押すたびに同じカードがくり返し出てしまうため。
+ */
+export function pickNext<T extends QueueState>(s: T, now: number, force = false): T {
+  const learn = [...s.learn].sort((a, b) => a.due - b.due);
+  if (learn.length && learn[0].due <= now) {
+    return { ...s, learn: learn.slice(1), current: learn[0].id, revealed: false };
+  }
+  if (learn.length && force && !s.main.length) {
+    // 時間前に出すときは、直前に答えたカードを続けて出さない
+    const i = learn.length > 1 && learn[0].id === s.last ? 1 : 0;
+    return { ...s, learn: learn.filter((_, k) => k !== i), current: learn[i].id, revealed: false };
+  }
+  if (s.main.length) return { ...s, learn, main: s.main.slice(1), current: s.main[0], revealed: false };
+  return { ...s, learn, current: null, revealed: false };
+}
+
 /** 復習カード every 枚ごとに新規カードを1枚はさむ。片方が尽きたら残りを続ける */
 export function interleave(review: string[], fresh: string[], every: number): string[] {
   const out: string[] = [];

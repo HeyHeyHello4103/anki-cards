@@ -14,7 +14,7 @@ import {
 import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
-import { buildQueue, byImp, countDue, forecast, impOf, interleave, newLimitFor, newStudiedToday, unitKey } from '../src/lib/session';
+import { buildQueue, byImp, countDue, forecast, impOf, interleave, newLimitFor, newStudiedToday, pickNext, unitKey } from '../src/lib/session';
 import type { CardData, SavedState } from '../src/lib/types';
 
 const at = (s: string) => new Date(s).getTime();
@@ -240,6 +240,25 @@ describe('session', () => {
     expect([newLimitFor(20, 'A'), newLimitFor(20, 'B'), newLimitFor(20, 'C'), newLimitFor(0, 'A')]).toEqual([30, 20, 10, 0]);
     const units = ['u1', 'u2', 'u3', 'u4'];
     expect(byImp(units, (u) => impOf(imp, 's1', u))).toEqual(['u1', 'u2', 'u4', 'u3']);
+  });
+  it('覚えている途中のカードは時間がたつまで出さない（同じカードのくり返しを防ぐ）', () => {
+    const base = { main: ['m1'], learn: [{ id: 'x', due: now + 6 * 60_000 }], current: null, revealed: true };
+    // まだほかのカードがあればそちらを出す
+    expect(pickNext(base, now).current).toBe('m1');
+    // 残りが途中のカードだけなら待つ
+    const waiting = pickNext({ ...base, main: [] }, now);
+    expect(waiting.current).toBeNull();
+    expect(waiting.learn).toHaveLength(1);
+    // 時間がたてば出す。「今すぐ出す」なら時間前でも出す
+    expect(pickNext({ ...base, main: [] }, now + 6 * 60_000).current).toBe('x');
+    expect(pickNext({ ...base, main: [] }, now, true).current).toBe('x');
+    // 時間が来た途中のカードは、ほかのカードより先に出す
+    expect(pickNext(base, now + 7 * 60_000).current).toBe('x');
+    // 「今すぐ出す」では、直前に答えたカードより別のカードを先に出す
+    const two = { main: [], learn: [{ id: 'x', due: now + 60_000 }, { id: 'y', due: now + 600_000 }], current: null, revealed: true, last: 'x' };
+    const forced = pickNext(two, now, true);
+    expect(forced.current).toBe('y');
+    expect(forced.learn.map((l) => l.id)).toEqual(['x']);
   });
   it('interleave', () => {
     expect(interleave(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toEqual(['a', 'b', 'x', 'c', 'y', 'z']);
