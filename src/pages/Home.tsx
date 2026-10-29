@@ -6,6 +6,8 @@ import { byImp, countDue, impOf, newLimitFor, newStudiedToday } from '../lib/ses
 import { useData } from '../lib/store';
 import type { CardData, Imp } from '../lib/types';
 
+const IMPS: Imp[] = ['A', 'B', 'C'];
+
 export function ImpBadge({ imp }: { imp: Imp }) {
   return (
     <span className={`imp imp-${imp}`} aria-label={`重要度${imp}`}>
@@ -72,6 +74,14 @@ export function Home() {
   const totals = sets
     .flatMap((s) => s.units)
     .reduce((t, u) => ({ due: t.due + u.due.learn + u.due.review, fresh: t.fresh + u.due.fresh }), { due: 0, fresh: 0 });
+  // 今日の復習の枚数を、科目 × セットの重要度で数える
+  const dueTable = sets.map(({ subject, units }) => {
+    const byImpCount: Record<Imp, number> = { A: 0, B: 0, C: 0 };
+    for (const u of units) byImpCount[u.imp] += u.due.learn + u.due.review;
+    return { subject, byImpCount, total: byImpCount.A + byImpCount.B + byImpCount.C };
+  });
+  const impTotals: Record<Imp, number> = { A: 0, B: 0, C: 0 };
+  for (const r of dueTable) for (const imp of IMPS) impTotals[imp] += r.byImpCount[imp];
   const todayCount = d.act[dayKey(now)]?.n ?? 0;
   const examDays = d.settings.examDate ? daysUntil(d.settings.examDate, now) : null;
 
@@ -89,10 +99,6 @@ export function Home() {
         </div>
         <div className="counts">
           <div className="count">
-            <b>{totals.due}</b>
-            <span>復習（全セット）</span>
-          </div>
-          <div className="count">
             <b>{totals.fresh}</b>
             <span>新規（全セット）</span>
           </div>
@@ -100,6 +106,46 @@ export function Home() {
             <b>{todayCount}</b>
             <span>今日の回答数</span>
           </div>
+        </div>
+        <div className="table-wrap">
+          <table className="data due-table">
+            <caption>今日の復習（科目別・重要度別）</caption>
+            <thead>
+              <tr>
+                <th>科目</th>
+                {IMPS.map((imp) => (
+                  <th key={imp} className="num">
+                    <ImpBadge imp={imp} />
+                  </th>
+                ))}
+                <th className="num">計</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dueTable.map(({ subject, byImpCount, total }) => (
+                <tr key={subject.id}>
+                  <td>{subject.name}</td>
+                  {IMPS.map((imp) => (
+                    <td key={imp} className={`num ${byImpCount[imp] ? '' : 'zero'}`}>
+                      {byImpCount[imp] || '–'}
+                    </td>
+                  ))}
+                  <td className={`num total ${total ? '' : 'zero'}`}>{total || '–'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>計</td>
+                {IMPS.map((imp) => (
+                  <td key={imp} className={`num ${impTotals[imp] ? '' : 'zero'}`}>
+                    {impTotals[imp] || '–'}
+                  </td>
+                ))}
+                <td className="num total">{totals.due}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
         <p className="small muted" style={{ margin: 0 }}>
           学習するセットを下から選んでください。重要度は「設定」で変えられます。
