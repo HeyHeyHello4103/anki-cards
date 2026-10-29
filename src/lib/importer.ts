@@ -22,6 +22,9 @@ export function normalize(s: string): string {
 
 const looseKey = (s: string) => normalize(s).replace(/ /g, '').toLowerCase();
 
+/** 表示用：空白だけ整える（全角記号などはそのまま残す） */
+const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
+
 export interface ImportRow {
   /** ファイル上の行番号（見出し行が1） */
   line: number;
@@ -70,7 +73,7 @@ export function readRows(table: string[][], defaults: { subject: string; unit: s
     }
   });
   const missingColumns = (['front', 'back'] as Field[]).filter((f) => columns[f] === undefined);
-  if (columns.subject === undefined && !normalize(defaults.subject)) missingColumns.push('subject');
+  if (columns.subject === undefined && !tidy(defaults.subject)) missingColumns.push('subject');
 
   const cell = (r: string[], f: Field) => {
     const idx = columns[f];
@@ -79,12 +82,12 @@ export function readRows(table: string[][], defaults: { subject: string; unit: s
   const rows: ImportRow[] = table.slice(1).map((r, i) => ({
     line: i + 2,
     id: cell(r, 'id').trim(),
-    subject: normalize(cell(r, 'subject')) || normalize(defaults.subject),
-    unit: normalize(cell(r, 'unit')) || normalize(defaults.unit) || '全般',
+    subject: tidy(cell(r, 'subject')) || tidy(defaults.subject),
+    unit: tidy(cell(r, 'unit')) || tidy(defaults.unit) || '全般',
     front: cell(r, 'front').trim(),
     back: cell(r, 'back').trim(),
     note: cell(r, 'note').trim(),
-    tags: normalize(cell(r, 'tags')).split(' ').filter(Boolean),
+    tags: tidy(cell(r, 'tags')).split(' ').filter(Boolean),
   }));
   return { rows, columns, missingColumns };
 }

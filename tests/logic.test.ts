@@ -13,7 +13,7 @@ import {
 } from '../src/lib/importer';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
-import { buildQueue, countDue, forecast, interleave, newStudiedToday } from '../src/lib/session';
+import { buildQueue, countDue, forecast, interleave, newStudiedToday, pickFresh } from '../src/lib/session';
 import type { CardData, SavedState } from '../src/lib/types';
 
 const at = (s: string) => new Date(s).getTime();
@@ -97,6 +97,10 @@ describe('importer', () => {
   });
   it('表・裏の列がなければ知らせる', () => {
     expect(table([['科目', 'question']]).missingColumns).toEqual(['back']);
+  });
+  it('科目名・単元名の全角記号はそのまま残す', () => {
+    const p = table([['科目', '単元', '表', '裏'], ['英語', '熟語：動詞句（頻出）', 'a', 'b']]);
+    expect(p.rows[0].unit).toBe('熟語：動詞句（頻出）');
   });
   it('科目の列がないときは入力した科目名を使う', () => {
     const p = readRows([['表', '裏'], ['a', 'b']], { subject: '英語', unit: '' });
@@ -226,6 +230,13 @@ describe('session', () => {
     expect(q.learn).toEqual(['l1']);
     expect(q.main).toEqual(['r2', 'r1', 'r5', 'r4', 'n1', 'r3', 'n2']);
     expect(countDue(cards, states, now, 2)).toEqual({ learn: 1, review: 5, fresh: 2, unseen: 3 });
+  });
+  it('新規カードは科目・単元を順番に回して選ぶ', () => {
+    const cards = [card('1', 'A', 'a1'), card('2', 'A', 'a1'), card('3', 'A', 'a1'), card('4', 'A', 'a2'), card('5', 'B', 'b1'), card('6', 'B', 'b1')];
+    expect(pickFresh(cards, {}, 5)).toEqual(['1', '5', '4', '6', '2']);
+    expect(pickFresh(cards, {}, 10)).toEqual(['1', '5', '4', '6', '2', '3']);
+    expect(pickFresh(cards, { '1': state(now, State.Review) }, 2)).toEqual(['2', '5']);
+    expect(pickFresh(cards, {}, 0)).toEqual([]);
   });
   it('interleave', () => {
     expect(interleave(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toEqual(['a', 'b', 'x', 'c', 'y', 'z']);

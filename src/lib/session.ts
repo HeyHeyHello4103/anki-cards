@@ -82,18 +82,48 @@ export function buildQueue(
   const end = nextStudyDayStart(now);
   const learn: { id: string; due: number }[] = [];
   const review: { id: string; due: number }[] = [];
-  const fresh: string[] = [];
   for (const c of cards) {
     const s = states[c.id];
-    if (!s || s.st === State.New) {
-      if (fresh.length < newLeft) fresh.push(c.id);
-    } else if (s.due < end) {
-      (isLearning(s) ? learn : review).push({ id: c.id, due: s.due });
-    }
+    if (s && s.st !== State.New && s.due < end) (isLearning(s) ? learn : review).push({ id: c.id, due: s.due });
   }
+  const fresh = pickFresh(cards, states, newLeft);
   learn.sort((a, b) => a.due - b.due);
   review.sort((a, b) => a.due - b.due);
   return { learn: learn.map((x) => x.id), main: interleave(review.map((x) => x.id), fresh, 4), freshCount: fresh.length };
+}
+
+/**
+ * 新規カードを、科目ごと・単元ごとに1枚ずつ順番に回して選ぶ。
+ * 並び順のまま選ぶと、最初の単元を全部終えるまでほかの単元の新規カードが出てこないため。
+ */
+export function pickFresh(cards: CardData[], states: Record<string, SavedState>, limit: number): string[] {
+  const subjects = new Map<string, Map<string, string[]>>();
+  for (const c of cards) {
+    const s = states[c.id];
+    if (s && s.st !== State.New) continue;
+    let units = subjects.get(c.s);
+    if (!units) subjects.set(c.s, (units = new Map()));
+    let list = units.get(c.u);
+    if (!list) units.set(c.u, (list = []));
+    list.push(c.id);
+  }
+  const rings = [...subjects.values()].map((units) => ({ lists: [...units.values()].map((ids) => ({ ids, pos: 0 })), turn: 0 }));
+  const out: string[] = [];
+  while (out.length < limit && rings.length) {
+    for (let i = 0; i < rings.length && out.length < limit; ) {
+      const ring = rings[i];
+      const k = ring.turn % ring.lists.length;
+      const list = ring.lists[k];
+      out.push(list.ids[list.pos++]);
+      if (list.pos >= list.ids.length) {
+        ring.lists.splice(k, 1);
+        ring.turn = k;
+      } else ring.turn = k + 1;
+      if (ring.lists.length) i++;
+      else rings.splice(i, 1);
+    }
+  }
+  return out;
 }
 
 /** 復習カード every 枚ごとに新規カードを1枚はさむ。片方が尽きたら残りを続ける */

@@ -520,6 +520,12 @@ button:focus-visible {
   overflow-y: hidden;
 }
 
+/* 元のカードで色付けしていた語句（「色のついた語」として問われる部分） */
+.face strong,
+.note strong {
+  color: var(--accent);
+}
+
 .divider {
   border: none;
   border-top: 1px dashed var(--border);
@@ -527,8 +533,8 @@ button:focus-visible {
 }
 
 .answer {
-  font-size: 21px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
 }
 
 .note {
