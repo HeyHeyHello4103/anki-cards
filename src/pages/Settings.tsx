@@ -1,10 +1,92 @@
 import { signOut } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { useState, type FormEvent } from 'react';
+import { doc, setDoc, writeBatch } from 'firebase/firestore';
+import { useMemo, useState, type FormEvent } from 'react';
 import { daysUntil } from '../lib/dates';
 import { auth, db } from '../lib/firebase';
+import { parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
 import { maxIntervalFor } from '../lib/scheduler';
+import { summarize } from '../lib/session';
 import { useData } from '../lib/store';
+
+/** 以前の学習記録（管理者が変換したファイル）を自分の記録として取り込む */
+function ProgressImport() {
+  const d = useData();
+  const [file, setFile] = useState<ProgressFile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const plan = useMemo(() => (file ? planProgressImport(file.states, d.states, d.chunkOf) : null), [file, d.states, d.chunkOf]);
+
+  const onFile = async (f: File | undefined) => {
+    setMsg(null);
+    setFile(null);
+    if (!f) return;
+    try {
+      setFile(parseProgressFile(await f.text()));
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message });
+    }
+  };
+
+  const doImport = async () => {
+    if (!plan || plan.imported === 0) return;
+    setBusy(true);
+    try {
+      const merged = { ...d.states };
+      const batch = writeBatch(db);
+      for (const [chunk, c] of Object.entries(plan.writes)) {
+        batch.set(doc(db, 'users', d.uid, 'states', chunk), { c }, { merge: true });
+        Object.assign(merged, c);
+      }
+      batch.set(doc(db, 'users', d.uid), { sum: { subj: summarize(d.cards, merged) } }, { merge: true });
+      await batch.commit();
+      setMsg({ kind: 'ok', text: `${plan.imported}枚の学習記録を取り込みました` });
+      setFile(null);
+    } catch (e) {
+      setMsg({ kind: 'error', text: `取り込みに失敗しました: ${(e as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel stack">
+      <h2 style={{ margin: 0 }}>以前の学習記録を取り込む</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        前に使っていた暗記カードの復習記録を変換したファイル（.json）があれば、ここで取り込めます。先にカードが登録されている必要があります。同じカードに両方の記録があるときは、最後に復習した日が新しいほうを残します。
+      </p>
+      <div>
+        <label className="btn file-pick">
+          記録のファイルを選ぶ
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => {
+              void onFile(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
+        </label>
+      </div>
+      {file && plan && (
+        <>
+          <div className="notice info">
+            {file.source ? `「${file.source}」の記録 ` : ''}
+            {Object.keys(file.states).length}枚分：取り込む <b>{plan.imported}</b>枚
+            {plan.keptNewer > 0 && `・このサイトの記録のほうが新しいので残す ${plan.keptNewer}枚`}
+            {plan.notFound > 0 && `・登録済みのカードに見つからない ${plan.notFound}枚`}
+          </div>
+          {d.cards.length === 0 && <div className="notice warn">カードがまだ登録されていません。管理者がカードを登録してから取り込んでください。</div>}
+          <div>
+            <button className="btn primary" disabled={busy || plan.imported === 0} onClick={doImport}>
+              {busy ? '取り込み中…' : '取り込む'}
+            </button>
+          </div>
+        </>
+      )}
+      {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+    </section>
+  );
+}
 
 export function Settings() {
   const d = useData();
@@ -55,6 +137,8 @@ export function Settings() {
           {msg && <span className={`notice ${msg.kind}`}>{msg.text}</span>}
         </div>
       </form>
+
+      <ProgressImport />
 
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>アカウント</h2>

@@ -11,6 +11,7 @@ import {
   validateRows,
   type ImportRow,
 } from '../src/lib/importer';
+import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
 import { buildQueue, countDue, forecast, interleave, newStudiedToday, pickFresh } from '../src/lib/session';
@@ -293,5 +294,29 @@ describe('scheduler', () => {
     expect(levelOf(state(now, State.Review, { s: 30 }))).toBe('mature');
     expect(levelOf(state(now, State.Review, { s: 5 }))).toBe('learning');
     expect(levelOf(state(now, State.Learning, { s: 30 }))).toBe('learning');
+  });
+});
+
+describe('progress', () => {
+  const now = at('2026-10-29T10:00:00');
+  const st = (lr: number): SavedState => state(now + 86_400_000, State.Review, { lr, s: 7 });
+  it('学習記録のファイルを読み、形が違う記録は捨てる', () => {
+    const f = parseProgressFile(
+      JSON.stringify({ format: 'anki-cards-progress', version: 1, source: 'x', states: { a: st(now), b: { due: 'x' } } }),
+    );
+    expect(Object.keys(f.states)).toEqual(['a']);
+    expect(() => parseProgressFile('{"format":"other"}')).toThrow('学習記録のファイルではない');
+    expect(() => parseProgressFile('not json')).toThrow('読み取れません');
+  });
+  it('カードごとに新しいほうを残し、見つからないカードは数える', () => {
+    const chunkOf = (id: string) => ({ a: 'c1', b: 'c1', c: 'c2' })[id];
+    const plan = planProgressImport(
+      { a: st(now - 10), b: st(now - 10), c: st(now - 10), z: st(now) },
+      { a: st(now - 20), b: st(now) },
+      chunkOf,
+    );
+    expect([plan.imported, plan.keptNewer, plan.notFound]).toEqual([2, 1, 1]);
+    expect(Object.keys(plan.writes.c1)).toEqual(['a']);
+    expect(Object.keys(plan.writes.c2)).toEqual(['c']);
   });
 });

@@ -1,7 +1,7 @@
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { db } from './firebase';
-import { levelOf } from './scheduler';
+import { summarize } from './session';
 import { Syncer } from './sync';
 import {
   DEFAULT_SETTINGS,
@@ -34,6 +34,8 @@ export interface AppData {
   settings: UserSettings;
   act: Record<string, DayAct>;
   sync: Syncer;
+  /** カードが入っているチャンク（学習状態の保存先） */
+  chunkOf: (cardId: string) => string | undefined;
   subjectName: (sid: string) => string;
   unitName: (sid: string, uid: string) => string;
 }
@@ -136,17 +138,7 @@ export function DataProvider(props: { uid: string; email: string; displayName: s
     // overlay は syncVersion が変わるたびに取り込み直す
   }, [baseStates, syncVersion, sync]);
 
-  summaryRef.current = () => {
-    const out: Record<string, SubjectSummary> = {};
-    for (const c of cards) {
-      const lv = levelOf(states[c.id]);
-      if (lv === 'new') continue;
-      const s = (out[c.s] ??= { l: 0, m: 0 });
-      if (lv === 'mature') s.m++;
-      else s.l++;
-    }
-    return out;
-  };
+  summaryRef.current = () => summarize(cards, states);
 
   const act = useMemo(() => sync.mergeAct(userDoc.act), [userDoc, syncVersion, sync]);
 
@@ -176,6 +168,7 @@ export function DataProvider(props: { uid: string; email: string; displayName: s
     settings: { ...DEFAULT_SETTINGS, ...(userDoc.settings ?? {}) },
     act,
     sync,
+    chunkOf: (id) => chunkOf.get(id),
     subjectName: (sid) => names.get(sid) ?? '（削除された科目）',
     unitName: (sid, u) => names.get(sid + '/' + u) ?? '（削除された単元）',
   };

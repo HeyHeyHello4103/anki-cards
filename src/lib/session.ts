@@ -1,6 +1,6 @@
 import { nextStudyDayStart, studyDayStart } from './dates';
-import { State } from './scheduler';
-import type { CardData, SavedState } from './types';
+import { levelOf, State } from './scheduler';
+import type { CardData, SavedState, SubjectSummary } from './types';
 
 export type Scope =
   | { kind: 'all' }
@@ -148,6 +148,19 @@ export function forecast(cards: CardData[], states: Record<string, SavedState>, 
     if (!s || s.st === State.New) continue;
     const idx = Math.max(0, Math.floor((s.due - start) / 86_400_000));
     if (idx < days) out[idx]++;
+  }
+  return out;
+}
+
+/** 科目ごとの「学習中」「定着」の枚数（管理者の学習状況一覧に出す） */
+export function summarize(cards: CardData[], states: Record<string, SavedState>): Record<string, SubjectSummary> {
+  const out: Record<string, SubjectSummary> = {};
+  for (const c of cards) {
+    const lv = levelOf(states[c.id]);
+    if (lv === 'new') continue;
+    const s = (out[c.s] ??= { l: 0, m: 0 });
+    if (lv === 'mature') s.m++;
+    else s.l++;
   }
   return out;
 }
