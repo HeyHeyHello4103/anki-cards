@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// 登録した人（members にメールアドレスがある人）だけが使える。
+// Firebase コンソール「Firestore Database → ルール」にこの内容を貼り付けて「公開」してください。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function memberPath() {
+      return /databases/$(database)/documents/members/$(myEmail());
+    }
+    function isMember() {
+      return signedIn() && exists(memberPath());
+    }
+    function isAdmin() {
+      return isMember() && get(memberPath()).data.role == 'admin';
+    }
+
+    // 利用者の名簿。自分の分は自分で確認でき、編集は管理者だけ
+    match /members/{email} {
+      allow get: if signedIn() && email == myEmail();
+      allow read, write: if isAdmin();
+    }
+
+    // 科目・単元の一覧とカード本体。読むのは利用者、書くのは管理者
+    match /catalog/{id} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+    match /cards/{chunk} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // 学習記録。書けるのは本人だけ、読めるのは本人と管理者
+    match /users/{uid} {
+      allow read: if isMember() && (request.auth.uid == uid || isAdmin());
+      allow write: if isMember() && request.auth.uid == uid;
+
+      match /{rest=**} {
+        allow read: if isMember() && (request.auth.uid == uid || isAdmin());
+        allow write: if isMember() && request.auth.uid == uid;
+      }
+    }
+  }
+}
