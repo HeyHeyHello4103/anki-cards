@@ -1,30 +1,38 @@
 import { nextStudyDayStart, studyDayStart } from './dates';
 import { levelOf, State } from './scheduler';
-import type { CardData, SavedState, SubjectSummary } from './types';
+import type { CardData, Imp, SavedState, SubjectSummary } from './types';
 
-export type Scope =
-  | { kind: 'all' }
-  | { kind: 'subject'; subject: string }
-  | { kind: 'units'; subject: string; units: string[] }
-  | { kind: 'weak' };
+/** 学習の範囲。学習は1つのセット（単元）ずつ行う */
+export type Scope = { kind: 'unit' | 'weak'; subject: string; unit: string };
 
 export function inScope(card: CardData, scope: Scope): boolean {
-  switch (scope.kind) {
-    case 'all':
-    case 'weak':
-      return true;
-    case 'subject':
-      return card.s === scope.subject;
-    case 'units':
-      return card.s === scope.subject && scope.units.includes(card.u);
-  }
+  return card.s === scope.subject && card.u === scope.unit;
 }
 
-/** 今日すでに新しく学習したカードの数 */
-export function newStudiedToday(states: Record<string, SavedState>, now: number): number {
+/** 単元の重要度を引くためのキー */
+export const unitKey = (subject: string, unit: string) => `${subject}_${unit}`;
+
+export function impOf(imp: Record<string, Imp> | undefined, subject: string, unit: string): Imp {
+  return imp?.[unitKey(subject, unit)] ?? 'B';
+}
+
+const IMP_RANK: Record<Imp, number> = { A: 0, B: 1, C: 2 };
+
+/** 重要度の高い順（同じ重要度なら元の順）に並べる */
+export function byImp<T>(items: T[], imp: (item: T) => Imp): T[] {
+  return items.map((x, i) => ({ x, i })).sort((a, b) => IMP_RANK[imp(a.x)] - IMP_RANK[imp(b.x)] || a.i - b.i).map((v) => v.x);
+}
+
+/** セットの1日の新規カードの上限。A は基本の1.5倍、C は半分 */
+export function newLimitFor(base: number, imp: Imp): number {
+  return imp === 'A' ? Math.round(base * 1.5) : imp === 'C' ? Math.round(base / 2) : base;
+}
+
+/** cards のうち、今日はじめて学習したカードの数 */
+export function newStudiedToday(cards: CardData[], states: Record<string, SavedState>, now: number): number {
   const start = studyDayStart(now);
   let n = 0;
-  for (const s of Object.values(states)) if (s.fr >= start) n++;
+  for (const c of cards) if ((states[c.id]?.fr ?? 0) >= start) n++;
   return n;
 }
 
@@ -63,6 +71,7 @@ export interface Queue {
 /**
  * 出題順を決める。
  * 学習中のカードを先に、そのあと復習カード（期限の古い順）の間に新規カードを一定間隔で混ぜる。
+ * 新規カードは並び順（重要度の高いカードが先）のまま出す。
  */
 export function buildQueue(
   cards: CardData[],
@@ -82,48 +91,18 @@ export function buildQueue(
   const end = nextStudyDayStart(now);
   const learn: { id: string; due: number }[] = [];
   const review: { id: string; due: number }[] = [];
+  const fresh: string[] = [];
   for (const c of cards) {
     const s = states[c.id];
-    if (s && s.st !== State.New && s.due < end) (isLearning(s) ? learn : review).push({ id: c.id, due: s.due });
+    if (!s || s.st === State.New) {
+      if (fresh.length < newLeft) fresh.push(c.id);
+    } else if (s.due < end) {
+      (isLearning(s) ? learn : review).push({ id: c.id, due: s.due });
+    }
   }
-  const fresh = pickFresh(cards, states, newLeft);
   learn.sort((a, b) => a.due - b.due);
   review.sort((a, b) => a.due - b.due);
   return { learn: learn.map((x) => x.id), main: interleave(review.map((x) => x.id), fresh, 4), freshCount: fresh.length };
-}
-
-/**
- * 新規カードを、科目ごと・単元ごとに1枚ずつ順番に回して選ぶ。
- * 並び順のまま選ぶと、最初の単元を全部終えるまでほかの単元の新規カードが出てこないため。
- */
-export function pickFresh(cards: CardData[], states: Record<string, SavedState>, limit: number): string[] {
-  const subjects = new Map<string, Map<string, string[]>>();
-  for (const c of cards) {
-    const s = states[c.id];
-    if (s && s.st !== State.New) continue;
-    let units = subjects.get(c.s);
-    if (!units) subjects.set(c.s, (units = new Map()));
-    let list = units.get(c.u);
-    if (!list) units.set(c.u, (list = []));
-    list.push(c.id);
-  }
-  const rings = [...subjects.values()].map((units) => ({ lists: [...units.values()].map((ids) => ({ ids, pos: 0 })), turn: 0 }));
-  const out: string[] = [];
-  while (out.length < limit && rings.length) {
-    for (let i = 0; i < rings.length && out.length < limit; ) {
-      const ring = rings[i];
-      const k = ring.turn % ring.lists.length;
-      const list = ring.lists[k];
-      out.push(list.ids[list.pos++]);
-      if (list.pos >= list.ids.length) {
-        ring.lists.splice(k, 1);
-        ring.turn = k;
-      } else ring.turn = k + 1;
-      if (ring.lists.length) i++;
-      else rings.splice(i, 1);
-    }
-  }
-  return out;
 }
 
 /** 復習カード every 枚ごとに新規カードを1枚はさむ。片方が尽きたら残りを続ける */

@@ -77,9 +77,14 @@ export interface DayAct {
   nw: number;
 }
 
+/** 単元の重要度（利用者ごとに設定。設定していない単元は B） */
+export type Imp = 'A' | 'B' | 'C';
+
 export interface UserSettings {
   examDate: string | null;
   newPerDay: number;
+  /** 単元ごとの重要度。キーは unitKey(科目ID, 単元ID) */
+  imp: Record<string, Imp>;
 }
 
 export interface SubjectSummary {
@@ -109,4 +114,4 @@ export interface MemberDoc {
   addedAt?: number;
 }
 
-export const DEFAULT_SETTINGS: UserSettings = { examDate: null, newPerDay: 20 };
+export const DEFAULT_SETTINGS: UserSettings = { examDate: null, newPerDay: 20, imp: {} };

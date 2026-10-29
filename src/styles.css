@@ -365,85 +365,116 @@ button:focus-visible {
   font-size: 15px;
 }
 
-.subject {
-  border-top: 1px solid var(--border);
-  padding: 12px 0;
+.set-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.subject:first-of-type {
-  border-top: none;
-  padding-top: 0;
-}
-
-.subject-head {
+.set-row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  background: none;
+  min-height: 56px;
+  padding: 8px 0;
   border: none;
-  padding: 4px 0;
-  cursor: pointer;
+  border-top: 1px solid var(--border);
+  background: none;
   text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.subject-name {
-  font-weight: 700;
-  font-size: 16px;
+.set-row:first-child {
+  border-top: none;
+}
+
+.set-row:hover .set-name > span:first-child {
+  color: var(--accent);
+}
+
+.set-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  font-size: 15px;
 }
 
 .chev {
   color: var(--text-3);
-  transition: transform 0.15s;
   flex: none;
 }
 
-.chev.open {
-  transform: rotate(90deg);
+.set-pills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
+.imp {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.imp-A {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.imp-B {
   background: var(--surface-2);
   color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-.pill.due {
-  background: var(--accent-soft);
-  color: var(--text);
+.imp-C {
+  border-color: var(--border);
+  color: var(--text-3);
 }
 
-.units {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 8px 0 4px 20px;
+.imp-choice {
+  display: inline-flex;
+  gap: 4px;
 }
 
-.unit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  font-size: 15px;
+.imp-choice button {
+  width: 36px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 700;
   cursor: pointer;
 }
 
-.unit input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
+.imp-choice button[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
-.unit .name {
+.imp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.imp-row .name {
   flex: 1;
+  min-width: 0;
 }
 
 /* ---------- 学習 ---------- */
@@ -744,6 +775,16 @@ button:focus-visible {
 
 .heatmap-wrap {
   overflow-x: auto;
+}
+
+.weak-set {
+  border-top: 1px solid var(--border);
+  padding: 10px 0;
+}
+
+.weak-set:first-of-type {
+  border-top: none;
+  padding-top: 0;
 }
 
 .weak-list {

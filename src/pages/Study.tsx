@@ -4,7 +4,7 @@ import { Rich } from '../components/Rich';
 import { dayKey, nextStudyDayStart } from '../lib/dates';
 import { go } from '../lib/router';
 import { formatInterval, GRADES, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
-import { buildQueue, inScope, newStudiedToday, type Scope } from '../lib/session';
+import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, type Scope } from '../lib/session';
 import { useData } from '../lib/store';
 import type { SavedState } from '../lib/types';
 
@@ -45,14 +45,10 @@ export function Study({ scope }: { scope: Scope }) {
 
   const [session, setSession] = useState<Session>(() => {
     const now = Date.now();
-    const newLeft = Math.max(0, d.settings.newPerDay - newStudiedToday(d.states, now));
-    const q = buildQueue(
-      d.cards.filter((c) => inScope(c, scope)),
-      d.states,
-      now,
-      newLeft,
-      scope.kind === 'weak' ? 'weak' : 'due',
-    );
+    const cards = d.cards.filter((c) => inScope(c, scope));
+    const limit = newLimitFor(d.settings.newPerDay, impOf(d.settings.imp, scope.subject, scope.unit));
+    const newLeft = Math.max(0, limit - newStudiedToday(cards, d.states, now));
+    const q = buildQueue(cards, d.states, now, newLeft, scope.kind === 'weak' ? 'weak' : 'due');
     const learn = q.learn.map((id) => ({ id, due: d.states[id].due }));
     return pickNext(
       { main: q.main, learn, current: null, revealed: false, answered: 0, tally: { again: 0, hard: 0, good: 0 } },
@@ -158,7 +154,7 @@ export function Study({ scope }: { scope: Scope }) {
               <p className="muted" style={{ margin: 0 }}>
                 {scope.kind === 'weak'
                   ? '覚えたあとで忘れた（復習で「もう一度」を押した）カードがここに集まります。'
-                  : 'この範囲の今日の分は終わっています。'}
+                  : 'このセットの今日の分は終わっています。'}
               </p>
             </>
           ) : (

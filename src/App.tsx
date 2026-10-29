@@ -10,11 +10,11 @@ import { Settings } from './pages/Settings';
 import { Stats } from './pages/Stats';
 import { Study } from './pages/Study';
 
-function scopeFrom(route: string[]): Scope {
-  if (route[1] === 's' && route[2]) return { kind: 'subject', subject: route[2] };
-  if (route[1] === 'u' && route[2] && route[3]) return { kind: 'units', subject: route[2], units: route[3].split(',') };
-  if (route[1] === 'weak') return { kind: 'weak' };
-  return { kind: 'all' };
+/** #/study/u/{科目}/{単元} または #/study/weak/{科目}/{単元} */
+function scopeFrom(route: string[]): Scope | null {
+  const [, kind, subject, unit] = route;
+  if ((kind === 'u' || kind === 'weak') && subject && unit) return { kind: kind === 'u' ? 'unit' : 'weak', subject, unit };
+  return null;
 }
 
 function Shell() {
@@ -31,12 +31,13 @@ function Shell() {
   }
   if (!d.ready) return <div className="spinner" aria-label="読み込み中" />;
 
-  if (page === 'study') {
+  const scope = page === 'study' ? scopeFrom(route) : null;
+  if (scope) {
     return (
       <div className="app">
         <div style={{ height: 'calc(12px + env(safe-area-inset-top))' }} />
         {/* key を変えて、範囲が変わったら学習を最初から組み立て直す */}
-        <Study key={route.join('/')} scope={scopeFrom(route)} />
+        <Study key={route.join('/')} scope={scope} />
       </div>
     );
   }

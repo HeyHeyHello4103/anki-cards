@@ -14,7 +14,7 @@ import {
 import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
-import { buildQueue, countDue, forecast, interleave, newStudiedToday, pickFresh } from '../src/lib/session';
+import { buildQueue, byImp, countDue, forecast, impOf, interleave, newLimitFor, newStudiedToday, unitKey } from '../src/lib/session';
 import type { CardData, SavedState } from '../src/lib/types';
 
 const at = (s: string) => new Date(s).getTime();
@@ -232,12 +232,14 @@ describe('session', () => {
     expect(q.main).toEqual(['r2', 'r1', 'r5', 'r4', 'n1', 'r3', 'n2']);
     expect(countDue(cards, states, now, 2)).toEqual({ learn: 1, review: 5, fresh: 2, unseen: 3 });
   });
-  it('新規カードは科目・単元を順番に回して選ぶ', () => {
-    const cards = [card('1', 'A', 'a1'), card('2', 'A', 'a1'), card('3', 'A', 'a1'), card('4', 'A', 'a2'), card('5', 'B', 'b1'), card('6', 'B', 'b1')];
-    expect(pickFresh(cards, {}, 5)).toEqual(['1', '5', '4', '6', '2']);
-    expect(pickFresh(cards, {}, 10)).toEqual(['1', '5', '4', '6', '2', '3']);
-    expect(pickFresh(cards, { '1': state(now, State.Review) }, 2)).toEqual(['2', '5']);
-    expect(pickFresh(cards, {}, 0)).toEqual([]);
+  it('セットの重要度と新規カードの上限', () => {
+    const imp = { [unitKey('s1', 'u1')]: 'A' as const, [unitKey('s1', 'u3')]: 'C' as const };
+    expect(impOf(imp, 's1', 'u1')).toBe('A');
+    expect(impOf(imp, 's1', 'u2')).toBe('B');
+    expect(impOf(undefined, 's1', 'u1')).toBe('B');
+    expect([newLimitFor(20, 'A'), newLimitFor(20, 'B'), newLimitFor(20, 'C'), newLimitFor(0, 'A')]).toEqual([30, 20, 10, 0]);
+    const units = ['u1', 'u2', 'u3', 'u4'];
+    expect(byImp(units, (u) => impOf(imp, 's1', u))).toEqual(['u1', 'u2', 'u4', 'u3']);
   });
   it('interleave', () => {
     expect(interleave(['a', 'b', 'c'], ['x', 'y', 'z'], 2)).toEqual(['a', 'b', 'x', 'c', 'y', 'z']);
@@ -252,7 +254,8 @@ describe('session', () => {
       a: state(now - 1, State.Review, { fr: at('2026-10-29T05:00:00') }),
       b: state(at('2026-10-31T12:00:00'), State.Review, { fr: at('2026-10-28T23:00:00') }),
     };
-    expect(newStudiedToday(states, now)).toBe(1);
+    expect(newStudiedToday([card('a'), card('b')], states, now)).toBe(1);
+    expect(newStudiedToday([card('b')], states, now)).toBe(0);
     expect(forecast([card('a'), card('b')], states, now)).toEqual([1, 0, 1, 0, 0, 0, 0]);
   });
 });

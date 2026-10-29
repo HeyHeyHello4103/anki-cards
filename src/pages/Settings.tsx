@@ -5,8 +5,64 @@ import { daysUntil } from '../lib/dates';
 import { auth, db } from '../lib/firebase';
 import { parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
 import { maxIntervalFor } from '../lib/scheduler';
-import { summarize } from '../lib/session';
+import { impOf, newLimitFor, summarize, unitKey } from '../lib/session';
 import { useData } from '../lib/store';
+import type { Imp } from '../lib/types';
+
+const IMPS: Imp[] = ['A', 'B', 'C'];
+
+function ImpChoice({ value, onChange, label }: { value: Imp | null; onChange: (imp: Imp) => void; label: string }) {
+  return (
+    <span className="imp-choice" role="group" aria-label={label}>
+      {IMPS.map((imp) => (
+        <button key={imp} type="button" aria-pressed={value === imp} onClick={() => onChange(imp)}>
+          {imp}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/** セット（単元）ごとの重要度。押すとすぐ保存する */
+function ImpSettings() {
+  const d = useData();
+  const save = (keys: string[], imp: Imp) => {
+    const patch: Record<string, Imp> = {};
+    for (const k of keys) patch[k] = imp;
+    setDoc(doc(db, 'users', d.uid), { settings: { imp: patch } }, { merge: true }).catch(() => {});
+  };
+  if (!d.catalog || d.catalog.subjects.length === 0) return null;
+  const base = d.settings.newPerDay;
+  return (
+    <section className="panel stack">
+      <h2 style={{ margin: 0 }}>セットごとの重要度</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        ホームでは重要度の高いセットから並びます。1日の新規カードの上限は A {newLimitFor(base, 'A')}枚・B {newLimitFor(base, 'B')}枚・C{' '}
+        {newLimitFor(base, 'C')}枚です。
+      </p>
+      {d.catalog.subjects.map((s) => {
+        const imps = s.units.map((u) => impOf(d.settings.imp, s.id, u.id));
+        const same = imps.every((x) => x === imps[0]) ? imps[0] : null;
+        return (
+          <div key={s.id}>
+            <div className="row" style={{ marginBottom: 4 }}>
+              <b>{s.name}</b>
+              <span className="spacer" />
+              <span className="small muted">まとめて</span>
+              <ImpChoice value={same} label={`${s.name}のセットをまとめて設定`} onChange={(imp) => save(s.units.map((u) => unitKey(s.id, u.id)), imp)} />
+            </div>
+            {s.units.map((u) => (
+              <div className="imp-row" key={u.id}>
+                <span className="name">{u.name}</span>
+                <ImpChoice value={impOf(d.settings.imp, s.id, u.id)} label={`${u.name}の重要度`} onChange={(imp) => save([unitKey(s.id, u.id)], imp)} />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
 
 /** 以前の学習記録（管理者が変換したファイル）を自分の記録として取り込む */
 function ProgressImport() {
@@ -124,11 +180,11 @@ export function Settings() {
             : '入試日を設定すると、どのカードも入試の前日までに少なくとも1回は出題されるよう間隔を調整します。'}
         </p>
         <label className="field">
-          1日に新しく学ぶカードの上限
+          1つのセットで1日に新しく学ぶカードの上限
           <input type="number" inputMode="numeric" min={0} max={500} value={newPerDay} onChange={(e) => setNewPerDay(e.target.value)} />
         </label>
         <p className="small muted" style={{ margin: 0 }}>
-          新しいカードを増やしすぎると、数日後の復習が一気に増えます。最初は20枚前後がおすすめです。
+          重要度Aのセットはこの1.5倍、Cのセットは半分になります。新しいカードを増やしすぎると数日後の復習が一気に増えるので、最初は20枚前後がおすすめです。
         </p>
         <div className="row">
           <button className="btn primary" type="submit">
@@ -137,6 +193,8 @@ export function Settings() {
           {msg && <span className={`notice ${msg.kind}`}>{msg.text}</span>}
         </div>
       </form>
+
+      <ImpSettings />
 
       <ProgressImport />
 

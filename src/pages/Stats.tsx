@@ -43,14 +43,20 @@ export function Stats() {
   const fcKeys = fc.map((_, i) => addDays(today, i));
   const fcLabels = fcKeys.map((k, i) => (i === 0 ? '今日' : i === 1 ? '明日' : WEEKDAYS[parseYmd(k).getDay()]));
 
-  const weak = useMemo(
-    () =>
-      d.cards
-        .filter((c) => (d.states[c.id]?.l ?? 0) > 0)
-        .sort((a, b) => d.states[b.id].l - d.states[a.id].l)
-        .slice(0, 20),
-    [d.cards, d.states],
-  );
+  // 苦手カード（覚えたあとで忘れたカード）をセットごとにまとめ、多いセットから並べる
+  const weakSets = useMemo(() => {
+    const m = new Map<string, { s: string; u: string; cards: typeof d.cards }>();
+    for (const c of d.cards) {
+      if ((d.states[c.id]?.l ?? 0) === 0) continue;
+      const k = c.s + '/' + c.u;
+      const g = m.get(k) ?? { s: c.s, u: c.u, cards: [] };
+      g.cards.push(c);
+      m.set(k, g);
+    }
+    return [...m.values()]
+      .map((g) => ({ ...g, cards: g.cards.sort((a, b) => d.states[b.id].l - d.states[a.id].l) }))
+      .sort((a, b) => b.cards.length - a.cards.length);
+  }, [d.cards, d.states]);
 
   const mature = rows.reduce((n, r) => n + r.mature, 0);
   const total = rows.reduce((n, r) => n + r.total, 0);
@@ -113,33 +119,38 @@ export function Stats() {
       </section>
 
       <section className="panel">
-        <div className="row" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>苦手カード</h2>
-          <span className="spacer" />
-          {weak.length > 0 && (
-            <a className="btn small primary" href="#/study/weak">
-              苦手カードを復習
-            </a>
-          )}
-        </div>
-        {weak.length === 0 ? (
+        <h2>苦手カード</h2>
+        {weakSets.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
-            覚えたあとで忘れたカードがここに表示されます。
+            覚えたあとで忘れたカードが、セットごとにここに表示されます。
           </p>
         ) : (
-          <ul className="weak-list">
-            {weak.map((c) => (
-              <li key={c.id}>
-                <div className="q">
-                  <div>{plainText(c.f)}</div>
-                  <div className="a">
-                    {plainText(c.b, 40)}・{d.subjectName(c.s)}
-                  </div>
-                </div>
-                <span className="pill">{d.states[c.id].l}回忘れた</span>
-              </li>
-            ))}
-          </ul>
+          weakSets.map((g) => (
+            <div className="weak-set" key={g.s + '/' + g.u}>
+              <div className="row">
+                <b>
+                  {d.subjectName(g.s)} › {d.unitName(g.s, g.u)}
+                </b>
+                <span className="small muted">{g.cards.length}枚</span>
+                <span className="spacer" />
+                <a className="btn small primary" href={`#/study/weak/${g.s}/${g.u}`}>
+                  復習する
+                </a>
+              </div>
+              <ul className="weak-list">
+                {g.cards.slice(0, 5).map((c) => (
+                  <li key={c.id}>
+                    <div className="q">
+                      <div>{plainText(c.f)}</div>
+                      <div className="a">{plainText(c.b, 40)}</div>
+                    </div>
+                    <span className="pill">{d.states[c.id].l}回忘れた</span>
+                  </li>
+                ))}
+                {g.cards.length > 5 && <li className="small muted">ほか{g.cards.length - 5}枚</li>}
+              </ul>
+            </div>
+          ))
         )}
       </section>
     </div>
