@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Grade } from 'ts-fsrs';
 import { breakdown, SetBar, SetBarNums } from '../components/Breakdown';
 import { Rich } from '../components/Rich';
 import { dayKey, nextStudyDayStart } from '../lib/dates';
 import { go } from '../lib/router';
-import { formatInterval, GRADES, levelOf, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
+import { formatDue, GRADES, levelOf, makeScheduler, previewNext, Rating, State, type Grade } from '../lib/scheduler';
 import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, pickNext, sectionsOf, type Scope } from '../lib/session';
 import { useData } from '../lib/store';
 import type { SavedState } from '../lib/types';
@@ -318,7 +317,7 @@ export function Study({ scope }: { scope: Scope }) {
           {GRADES.map((g) => (
             <button key={g.key} className={`grade ${g.tone}`} onClick={() => answer(g.rating)}>
               <b>{g.label}</b>
-              <span>{formatInterval(options[g.rating].due - now)}後</span>
+              <span>{formatDue(options[g.rating].due, now)}</span>
             </button>
           ))}
         </div>

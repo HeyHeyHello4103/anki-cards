@@ -49,20 +49,20 @@ export interface Catalog {
 /** 利用者ごとのカードの学習状態（users/{uid}/states/{chunkId} の c.{cardId}） */
 export interface SavedState {
   due: number;
-  /** stability（記憶の安定度・日） */
-  s: number;
-  /** difficulty */
-  d: number;
-  /** ts-fsrs の State */
+  /** 状態（0 未学習・1 学習中・2 復習・3 忘れて覚え直し中） */
   st: number;
-  /** scheduled_days */
+  /** 間隔（日）。覚え直し中は、覚え直したあとに使う間隔 */
   sd: number;
-  /** learning_steps */
-  ls: number;
-  /** reps */
+  /** 易しさ係数（「覚えた」で間隔を何倍にするか）。以前の方式の記録にはない */
+  e?: number;
+  /** 続けて覚えていた回数（忘れると 0 に戻る） */
   r: number;
   /** lapses（覚えたあとで忘れた回数） */
   l: number;
+  /** 以前の方式（FSRS）の記録にだけある：安定度・難しさ・学習ステップ */
+  s?: number;
+  d?: number;
+  ls?: number;
   /** last_review */
   lr: number | null;
   /** 初めて学習した日時 */

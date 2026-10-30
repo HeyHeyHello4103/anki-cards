@@ -1,6 +1,7 @@
 import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { db } from './firebase';
+import { normalize } from './scheduler';
 import { summarize } from './session';
 import { Syncer } from './sync';
 import {
@@ -92,7 +93,10 @@ export function DataProvider(props: { uid: string; email: string; displayName: s
       }, fail),
       onSnapshot(collection(db, 'users', uid, 'states'), (q) => {
         const next: Record<string, SavedState> = {};
-        q.forEach((d) => Object.assign(next, (d.data() as { c?: Record<string, SavedState> }).c ?? {}));
+        // 以前の方式（FSRS）の記録は、読み込むときに今の形にそろえる
+        q.forEach((d) => {
+          for (const [id, st] of Object.entries((d.data() as { c?: Record<string, SavedState> }).c ?? {})) next[id] = normalize(st);
+        });
         setBaseStates(next);
         setLoaded((l) => ({ ...l, states: true }));
       }, fail),

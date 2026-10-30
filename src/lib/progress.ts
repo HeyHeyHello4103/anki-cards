@@ -1,3 +1,4 @@
+import { normalize } from './scheduler';
 import type { SavedState } from './types';
 
 /** 以前の学習記録を移すためのファイル（管理者が変換して利用者に渡す） */
@@ -8,12 +9,19 @@ export interface ProgressFile {
   states: Record<string, SavedState>;
 }
 
-const NUM_FIELDS = ['due', 's', 'd', 'st', 'sd', 'ls', 'r', 'l', 'fr'] as const;
+const NUM_FIELDS = ['due', 'st', 'sd', 'r', 'l', 'fr'] as const;
+const OPTIONAL_NUM_FIELDS = ['e', 's', 'd', 'ls'] as const;
+
+const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
 
 function isState(v: unknown): v is SavedState {
   if (!v || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
-  return NUM_FIELDS.every((k) => typeof o[k] === 'number' && Number.isFinite(o[k])) && (o.lr === null || typeof o.lr === 'number');
+  return (
+    NUM_FIELDS.every((k) => isNum(o[k])) &&
+    OPTIONAL_NUM_FIELDS.every((k) => o[k] === undefined || isNum(o[k])) &&
+    (o.lr === null || typeof o.lr === 'number')
+  );
 }
 
 export function parseProgressFile(text: string): ProgressFile {
@@ -60,7 +68,7 @@ export function planProgressImport(
       plan.keptNewer++;
       continue;
     }
-    (plan.writes[chunk] ??= {})[id] = st;
+    (plan.writes[chunk] ??= {})[id] = normalize(st);
     plan.imported++;
   }
   return plan;

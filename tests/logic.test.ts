@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeText, parseDelimited, toCsv } from '../src/lib/csv';
-import { addDays, dayKey, daysUntil, studyDayStart } from '../src/lib/dates';
+import { addDays, DAY_MS, dayKey, daysUntil, studyDayStart } from '../src/lib/dates';
 import {
   exportRows,
   htmlToText,
@@ -14,7 +14,18 @@ import {
 import { deleteCard, deleteSet, mergeSet, moveSections, moveSetOrder, moveSetToSubject, renameSections, renameSet } from '../src/lib/edit';
 import { parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
-import { levelOf, makeScheduler, maxIntervalFor, previewNext, Rating, State } from '../src/lib/scheduler';
+import {
+  afterLapse,
+  formatDue,
+  levelOf,
+  makeScheduler,
+  maxIntervalFor,
+  normalize,
+  previewNext,
+  Rating,
+  State,
+  type Grade,
+} from '../src/lib/scheduler';
 import { buildQueue, byImp, countDue, forecast, impOf, inScope, interleave, isUsed, newLimitFor, newStudiedToday, pickNext, sectionsOf, unitKey } from '../src/lib/session';
 import type { CardData, ChunkDoc, SavedState } from '../src/lib/types';
 
@@ -240,11 +251,9 @@ describe('importer', () => {
 const card = (id: string, s = 's', u = 'u'): CardData => ({ id, s, u, f: id, b: id });
 const state = (due: number, st: State, extra: Partial<SavedState> = {}): SavedState => ({
   due,
-  s: 5,
-  d: 5,
   st,
   sd: 1,
-  ls: 0,
+  e: 2.5,
   r: 1,
   l: 0,
   lr: due - 86_400_000,
@@ -335,47 +344,112 @@ describe('session', () => {
 
 describe('scheduler', () => {
   const now = at('2026-10-29T10:00:00');
-  it('新しいカードは 1分 / 6分 / 10分 後', () => {
-    const f = makeScheduler(null, now);
-    const p = previewNext(f, undefined, now);
-    expect((p[Rating.Again].due - now) / 60_000).toBe(1);
-    expect((p[Rating.Hard].due - now) / 60_000).toBe(6);
-    expect((p[Rating.Good].due - now) / 60_000).toBe(10);
-    expect(p[Rating.Good].fr).toBe(now);
+  const sch = makeScheduler(null, now);
+  const G = Rating.Good;
+  const H = Rating.Hard;
+  const A = Rating.Again;
+  /** 期限の日の朝7時（覚え直しは期限ちょうど）に答え続けたときの間隔 */
+  const run = (grades: Grade[], from?: SavedState) => {
+    let s = from;
+    let t = from ? from.due + 3 * 3_600_000 : now;
+    const out: (number | string)[] = [];
+    for (const g of grades) {
+      const next = previewNext(sch, s, t)[g];
+      if (next.st === State.Review) {
+        out.push(Math.round((studyDayStart(next.due) - studyDayStart(t)) / DAY_MS));
+        t = next.due + 3 * 3_600_000;
+      } else {
+        out.push(`${Math.round((next.due - t) / 60_000)}分`);
+        t = next.due;
+      }
+      s = next;
+    }
+    return { out, last: s! };
+  };
+
+  it('新しいカード：もう一度は1分後、あいまい・覚えたは明日（朝4時から）', () => {
+    const p = previewNext(sch, undefined, now);
+    expect(p[A].due - now).toBe(60_000);
+    expect(p[A].st).toBe(State.Learning);
+    expect(p[A].l).toBe(0);
+    expect(p[H].due).toBe(at('2026-10-30T04:00:00'));
+    expect(p[G].due).toBe(at('2026-10-30T04:00:00'));
+    expect([p[A].e, p[H].e, p[G].e]).toEqual([2.3, 2.35, 2.5]);
+    expect(p[G].fr).toBe(now);
+  });
+  it('覚えたが続くと元の暗記カードと同じく 1→3→8→20→50→125→313日', () => {
+    expect(run([G, G, G, G, G, G, G]).out).toEqual([1, 3, 8, 20, 50, 125, 313]);
+  });
+  it('あいまいは前回の1.2倍（1日のカードは1日のまま）', () => {
+    expect(run([G, G, H, H, H, H]).out).toEqual([1, 3, 4, 5, 6, 7]);
+    expect(run([H, H, H]).out).toEqual([1, 1, 1]);
+    expect(run([G, G, H, G, G]).out).toEqual([1, 3, 4, 9, 21]);
+  });
+  it('覚えていたカードを忘れたら、10分後に覚え直し、前の間隔に応じた日数から再開する', () => {
+    const r = run([G, G, G, G, G, A, A, G, G, G, G]);
+    expect(r.out).toEqual([1, 3, 8, 20, 50, '10分', '10分', 4, 9, 21, 48]);
+    expect(r.last.l).toBe(1);
+    expect(r.last.e).toBe(2.3);
+    // 短い間隔で忘れたときは 1日 → 3日 から（元の暗記カードのやり直しより短くはならない）
+    expect(run([G, G, A, G, G, G]).out).toEqual([1, 3, '10分', 1, 3, 7]);
+    // 初めて見て思い出せなかったカード
+    expect(run([A, A, G, G, G]).out).toEqual(['1分', '1分', 1, 3, 7]);
+  });
+  it('忘れたあとの再開日数', () => {
+    expect([1, 3, 8, 9, 20, 50, 125, 313].map(afterLapse)).toEqual([1, 1, 1, 2, 2, 4, 6, 9]);
+  });
+  it('期限前に答えたとき（苦手カードの復習）は、覚えていれば予定を変えない', () => {
+    const s = state(at('2026-11-03T04:00:00'), State.Review, { sd: 20, r: 3 });
+    const p = previewNext(sch, s, now);
+    expect([p[G].due, p[G].sd, p[H].due, p[H].e]).toEqual([s.due, 20, s.due, 2.5]);
+    expect(p[A].st).toBe(State.Relearning);
+    expect(p[A].sd).toBe(2);
   });
   it('入試日を設定すると、次の出題は入試の前日まで', () => {
     expect(maxIntervalFor('2026-11-08', now)).toBe(9);
     expect(maxIntervalFor('2026-10-29', now)).toBe(36500);
     expect(maxIntervalFor(null, now)).toBe(36500);
-    const f = makeScheduler('2026-11-08', now);
-    const mature = state(now, State.Review, { s: 200, d: 3, sd: 100, lr: now - 100 * 86_400_000, r: 8 });
-    const p = previewNext(f, mature, now);
-    for (const g of [Rating.Again, Rating.Hard, Rating.Good] as const) {
-      expect(p[g].due).toBeLessThanOrEqual(at('2026-11-07T23:59:59'));
-    }
-    expect(p[Rating.Good].sd).toBeLessThanOrEqual(9);
-    // 上限がなければもっと先になる
-    const free = previewNext(makeScheduler(null, now), mature, now);
-    expect(free[Rating.Good].due).toBeGreaterThan(at('2026-12-01T00:00:00'));
+    const s = state(now, State.Review, { sd: 100, r: 5 });
+    const p = previewNext(makeScheduler('2026-11-08', now), s, now);
+    expect(p[G].due).toBe(at('2026-11-07T04:00:00'));
+    expect(p[H].due).toBe(at('2026-11-07T04:00:00'));
+    // 間隔そのものは伸ばしておく（入試のあとは上限なし）
+    expect(p[G].sd).toBe(250);
+    const free = previewNext(sch, s, now);
+    expect(free[G].due).toBe(at('2027-07-06T04:00:00'));
   });
-  it('復習で「もう一度」を押すと忘れた回数が増える', () => {
-    const f = makeScheduler(null, now);
-    const s = state(now, State.Review, { s: 10, sd: 10, lr: now - 10 * 86_400_000 });
-    const p = previewNext(f, s, now);
-    expect(p[Rating.Again].l).toBe(1);
-    expect(p[Rating.Again].st).toBe(State.Relearning);
+  it('以前の方式（FSRS）の記録も引き継ぐ', () => {
+    const legacy = { due: now, s: 20, d: 5.8, st: State.Review, sd: 20, ls: 0, r: 7, l: 0, lr: now - 20 * DAY_MS, fr: 0 };
+    const p = previewNext(sch, legacy, now);
+    expect(p[G].e).toBe(2.3);
+    expect(p[G].sd).toBe(46);
+    const relearn = { ...legacy, st: State.Relearning, s: 3, sd: 0, l: 1, d: 5.5 };
+    expect(previewNext(sch, relearn, now)[G].sd).toBe(3);
+    const hard = { ...legacy, d: 10, l: 2 };
+    expect(previewNext(sch, hard, now)[G].e).toBe(1.5);
+    // 元の暗記カードの期限（夜0時）は、その日の午前4時にそろえる
+    expect(normalize({ ...legacy, due: at('2026-11-05T00:00:00') }).due).toBe(at('2026-11-05T04:00:00'));
+    expect(normalize({ ...legacy, due: at('2026-11-05T09:12:00') }).due).toBe(at('2026-11-05T09:12:00'));
   });
   it('定着の判定', () => {
     expect(levelOf(undefined)).toBe('new');
-    expect(levelOf(state(now, State.Review, { s: 30 }))).toBe('mature');
-    expect(levelOf(state(now, State.Review, { s: 5 }))).toBe('learning');
-    expect(levelOf(state(now, State.Learning, { s: 30 }))).toBe('learning');
+    expect(levelOf(state(now, State.Review, { sd: 30 }))).toBe('mature');
+    expect(levelOf(state(now, State.Review, { sd: 5 }))).toBe('learning');
+    expect(levelOf(state(now, State.Relearning, { sd: 30 }))).toBe('learning');
+  });
+  it('次に出す日の表し方', () => {
+    expect(formatDue(now + 60_000, now)).toBe('1分後');
+    expect(formatDue(now + 10 * 60_000, now)).toBe('10分後');
+    expect(formatDue(at('2026-10-30T04:00:00'), now)).toBe('明日');
+    expect(formatDue(at('2026-10-30T04:00:00'), at('2026-10-29T23:30:00'))).toBe('明日');
+    expect(formatDue(at('2026-11-01T04:00:00'), now)).toBe('3日後');
+    expect(formatDue(at('2026-12-18T04:00:00'), now)).toBe('約2か月後');
   });
 });
 
 describe('progress', () => {
   const now = at('2026-10-29T10:00:00');
-  const st = (lr: number): SavedState => state(now + 86_400_000, State.Review, { lr, s: 7 });
+  const st = (lr: number): SavedState => state(now + 86_400_000, State.Review, { lr, sd: 7 });
   it('学習記録のファイルを読み、形が違う記録は捨てる', () => {
     const f = parseProgressFile(
       JSON.stringify({ format: 'anki-cards-progress', version: 1, source: 'x', states: { a: st(now), b: { due: 'x' } } }),
@@ -394,6 +468,11 @@ describe('progress', () => {
     expect([plan.imported, plan.keptNewer, plan.notFound]).toEqual([2, 1, 1]);
     expect(Object.keys(plan.writes.c1)).toEqual(['a']);
     expect(Object.keys(plan.writes.c2)).toEqual(['c']);
+  });
+  it('以前の方式の記録は今の形にそろえて書き込む', () => {
+    const legacy = { due: now, s: 8, d: 5, st: State.Review, sd: 8, ls: 0, r: 3, l: 0, lr: now, fr: now } as SavedState;
+    const plan = planProgressImport({ a: legacy }, {}, () => 'c1');
+    expect(plan.writes.c1.a).toMatchObject({ e: 2.5, sd: 8, r: 2, st: State.Review });
   });
 });
 

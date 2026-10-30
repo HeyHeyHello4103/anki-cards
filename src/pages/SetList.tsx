@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Rich } from '../components/Rich';
 import { breakdown, SetBar, SetBarNums } from '../components/Breakdown';
 import { nextStudyDayStart } from '../lib/dates';
-import { formatInterval, levelOf, type Level } from '../lib/scheduler';
+import { formatDue, levelOf, type Level } from '../lib/scheduler';
 import { impOf, sectionsOf } from '../lib/session';
 import { useData } from '../lib/store';
 import type { CardData, SavedState } from '../lib/types';
@@ -19,7 +19,7 @@ const cardImp = (c: CardData) => c.t?.find((t) => /^重要度[ABC]$/.test(t))?.s
 function statusOf(s: SavedState | undefined, now: number): string {
   if (!s || s.st === 0) return '未学習';
   if (s.due < nextStudyDayStart(now)) return '今日の復習';
-  return `次は${formatInterval(s.due - now)}後`;
+  return `次は${formatDue(s.due, now)}`;
 }
 
 function Chips<T extends string>(props: { label: string; items: { value: T; text: string }[]; value: T; onChange: (v: T) => void }) {
