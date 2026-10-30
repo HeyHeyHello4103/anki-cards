@@ -1,6 +1,7 @@
 import { useAuthState, emailOf } from './lib/auth';
 import { configured } from './lib/firebase';
 import { useRoute } from './lib/router';
+import { useUpdateAvailable } from './lib/version';
 import { sectionsOf, type Scope } from './lib/session';
 import { DataProvider, useData } from './lib/store';
 import { Admin } from './pages/Admin';
@@ -108,9 +109,28 @@ function SetupNeeded() {
   );
 }
 
+/** 新しい版が公開されていたら知らせる */
+function UpdateBanner() {
+  const available = useUpdateAvailable();
+  if (!available) return null;
+  return (
+    <div className="update-banner" role="status">
+      <span>新しいバージョンがあります</span>
+      <button className="btn small primary" onClick={() => location.reload()}>
+        更新する
+      </button>
+    </div>
+  );
+}
+
 export function App() {
   if (!configured) return <SetupNeeded />;
-  return <AuthGate />;
+  return (
+    <>
+      <UpdateBanner />
+      <AuthGate />
+    </>
+  );
 }
 
 function AuthGate() {

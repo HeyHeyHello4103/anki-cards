@@ -8,6 +8,7 @@ import { maxIntervalFor } from '../lib/scheduler';
 import { impOf, isUsed, newLimitFor, summarize, unitKey } from '../lib/session';
 import { useData } from '../lib/store';
 import type { Imp } from '../lib/types';
+import { APP_VERSION, BUILT_AT, formatBuiltAt } from '../lib/version';
 
 const IMPS: Imp[] = ['A', 'B', 'C'];
 
@@ -258,6 +259,11 @@ export function Settings() {
           <li>スマホではブラウザのメニューから「ホーム画面に追加」すると、アプリのように使えます。</li>
         </ul>
       </section>
+
+      <p className="small muted center" style={{ margin: 0 }}>
+        バージョン {APP_VERSION}
+        {formatBuiltAt(BUILT_AT) && `（${formatBuiltAt(BUILT_AT)} 公開）`}
+      </p>
     </div>
   );
 }

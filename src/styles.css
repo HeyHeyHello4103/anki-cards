@@ -1128,6 +1128,21 @@ table.data th.num {
   flex-wrap: wrap;
 }
 
+/* 新しい版のお知らせ */
+.update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+  background: var(--accent-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+
 /* ---------- 管理：編集 ---------- */
 
 .edit-subject {
