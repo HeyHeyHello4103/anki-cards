@@ -635,17 +635,33 @@ button:focus-visible {
   color: var(--text);
 }
 
-.progress {
-  height: 4px;
-  background: var(--surface-2);
-  border-radius: 999px;
-  overflow: hidden;
+.study-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.progress > div {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.2s;
+.today-left {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.today-left b {
+  font-size: 24px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-left .lbl {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.today-left .remain {
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .flashcard {

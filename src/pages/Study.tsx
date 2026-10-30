@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Grade } from 'ts-fsrs';
+import { breakdown, SetBar, SetBarNums } from '../components/Breakdown';
 import { Rich } from '../components/Rich';
 import { dayKey, nextStudyDayStart } from '../lib/dates';
 import { go } from '../lib/router';
-import { formatInterval, GRADES, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
+import { formatInterval, GRADES, levelOf, makeScheduler, previewNext, Rating, State } from '../lib/scheduler';
 import { buildQueue, impOf, inScope, newLimitFor, newStudiedToday, pickNext, sectionsOf, type Scope } from '../lib/session';
 import { useData } from '../lib/store';
 import type { SavedState } from '../lib/types';
@@ -95,10 +96,11 @@ export function Study({ scope }: { scope: Scope }) {
     );
   });
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [startTotal] = useState(() => session.main.length + session.learn.length + (session.current ? 1 : 0));
 
   // 画面を離れるときに保存
   useEffect(() => () => d.sync.flush(), [d.sync]);
+
+  const scopeCards = useMemo(() => d.cards.filter((c) => inScope(c, scope)), [d.cards, scope]);
 
   const hasSections = useMemo(
     () => sectionsOf(d.cards.filter((c) => c.s === scope.subject && c.u === scope.unit)).length > 1,
@@ -189,7 +191,16 @@ export function Study({ scope }: { scope: Scope }) {
   const curKind = session.current ? kindOf(prev) : null;
   if (curKind) remain[curKind === 'new' ? 'new' : curKind === 'learn' ? 'learn' : 'review']++;
   const left = remain.new + remain.learn + remain.review;
-  const progress = startTotal ? Math.min(1, session.answered / (session.answered + left)) : 1;
+
+  // 学習している範囲（セット、区分を選んだときはその区分）の定着・学習中・未学習
+  let mature = 0;
+  let learning = 0;
+  for (const c of scopeCards) {
+    const lv = levelOf(d.states[c.id]);
+    if (lv === 'mature') mature++;
+    else if (lv === 'learning') learning++;
+  }
+  const segs = breakdown(mature, learning, scopeCards.length - mature - learning);
 
   if (!session.current && session.learn.length > 0) {
     return <Waiting session={session} onShow={showWaiting} onUndo={undo} />;
@@ -260,17 +271,24 @@ export function Study({ scope }: { scope: Scope }) {
           ← やめる
         </a>
         <span className="spacer" />
-        <div className="remain" aria-label="残り枚数">
-          <span className={curKind === 'new' ? 'cur' : ''}>新規 {remain.new}</span>
-          <span className={curKind === 'learn' ? 'cur' : ''}>学習中 {remain.learn}</span>
-          <span className={curKind === 'review' ? 'cur' : ''}>復習 {remain.review}</span>
-        </div>
         <button className="btn small" onClick={undo} disabled={history.length === 0} title="直前の回答を取り消す（Z）">
           ↶ 戻す
         </button>
       </div>
-      <div className="progress" aria-hidden="true">
-        <div style={{ width: `${progress * 100}%` }} />
+      <div className="study-status">
+        <div className="today-left">
+          <span className="lbl">今日の残り</span>
+          <b>{left}</b>
+          <span className="lbl">枚</span>
+          <span className="spacer" />
+          <span className="remain" aria-label="残りの内訳">
+            <span className={curKind === 'new' ? 'cur' : ''}>新規 {remain.new}</span>
+            <span className={curKind === 'learn' ? 'cur' : ''}>学習中 {remain.learn}</span>
+            <span className={curKind === 'review' ? 'cur' : ''}>復習 {remain.review}</span>
+          </span>
+        </div>
+        <SetBar segs={segs} />
+        <SetBarNums segs={segs} />
       </div>
 
       <div

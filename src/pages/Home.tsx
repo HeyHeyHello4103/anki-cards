@@ -4,6 +4,7 @@ import { go } from '../lib/router';
 import { levelOf } from '../lib/scheduler';
 import { byImp, countDue, impOf, isUsed, newLimitFor, newStudiedToday } from '../lib/session';
 import { useData } from '../lib/store';
+import { breakdown, SetBar, SetBarNums } from '../components/Breakdown';
 import type { CardData, Imp, UnitMeta } from '../lib/types';
 
 const IMPS: Imp[] = ['A', 'B', 'C'];
@@ -26,42 +27,6 @@ function SetDue({ learn, review, fresh }: { learn: number; review: number; fresh
         <b className={due ? '' : 'zero'}>{due}</b>
       </span>
       <span className="set-due-sub">{fresh > 0 ? `新規 ${fresh}` : due === 0 ? '今日は完了' : ''}</span>
-    </span>
-  );
-}
-
-type Breakdown = { label: string; n: number; color: string }[];
-
-function breakdown(mature: number, learning: number, unseen: number): Breakdown {
-  return [
-    { label: '定着', n: mature, color: 'var(--viz-mature)' },
-    { label: '学習中', n: learning, color: 'var(--viz-learning)' },
-    { label: '未学習', n: unseen, color: 'var(--viz-track)' },
-  ];
-}
-
-/** 定着・学習中・未学習の内訳の棒（重要度Aのセットに出す） */
-function SetBar({ segs }: { segs: Breakdown }) {
-  return (
-    <span className="set-bar stackbar thin" role="img" aria-label={segs.map((x) => `${x.label}${x.n}枚`).join('、')}>
-      {segs
-        .filter((x) => x.n > 0)
-        .map((x) => (
-          <span key={x.label} style={{ flexGrow: x.n, flexBasis: 0, background: x.color }} />
-        ))}
-    </span>
-  );
-}
-
-function SetBarNums({ segs }: { segs: Breakdown }) {
-  return (
-    <span className="set-bar-nums" aria-hidden="true">
-      {segs.map((x) => (
-        <span key={x.label}>
-          <i style={{ background: x.color }} />
-          {x.label} {x.n}
-        </span>
-      ))}
     </span>
   );
 }
