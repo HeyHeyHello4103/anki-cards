@@ -248,11 +248,9 @@ export function Study({ scope }: { scope: Scope }) {
                 最後の回答を取り消す
               </button>
             )}
-            {hasSections && (
-              <a className="btn" href={`#/study/u/${scope.subject}/${scope.unit}`}>
-                ほかの区分を選ぶ
-              </a>
-            )}
+            <a className="btn" href={`#/study/u/${scope.subject}/${scope.unit}`}>
+              {hasSections ? 'ほかの区分を選ぶ' : 'セットの画面へ'}
+            </a>
             <a className="btn primary" href="#/">
               ホームへ
             </a>

@@ -7,6 +7,7 @@ import { DataProvider, useData } from './lib/store';
 import { Admin } from './pages/Admin';
 import { Home } from './pages/Home';
 import { Login, NotMember, VerifyEmail } from './pages/Login';
+import { SetList } from './pages/SetList';
 import { SetStart } from './pages/SetStart';
 import { Settings } from './pages/Settings';
 import { Stats } from './pages/Stats';
@@ -82,6 +83,8 @@ function Shell() {
       <main>
         {page === 'study' && route[1] === 'u' && route[2] && route[3] ? (
           <SetStart key={route[2] + '/' + route[3]} subject={route[2]} unit={route[3]} />
+        ) : page === 'list' && route[1] && route[2] ? (
+          <SetList key={route[1] + '/' + route[2]} subject={route[1]} unit={route[2]} />
         ) : page === 'stats' ? (
           <Stats />
         ) : page === 'settings' ? (

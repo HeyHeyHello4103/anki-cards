@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { go } from '../lib/router';
 import { countDue, impOf, newLimitFor, newStudiedToday, sectionsOf } from '../lib/session';
 import { useData } from '../lib/store';
@@ -28,11 +28,6 @@ export function SetStart({ subject, unit }: { subject: string; unit: string }) {
   const sections = useMemo(() => sectionsOf(cards), [cards]);
   const [picked, setPicked] = useState(() => loadSelection(subject, unit, sections));
 
-  // 区分が1つしかないセットは、選ぶ画面を出さずにそのまま始める
-  useEffect(() => {
-    if (cards.length && sections.length < 2) location.replace(`#/study/u/${subject}/${unit}/go/all`);
-  }, [cards.length, sections.length, subject, unit]);
-
   if (!cards.length) {
     return (
       <div className="panel stack">
@@ -43,7 +38,6 @@ export function SetStart({ subject, unit }: { subject: string; unit: string }) {
       </div>
     );
   }
-  if (sections.length < 2) return <div className="spinner" aria-label="読み込み中" />;
 
   const imp = impOf(d.settings.imp, subject, unit);
   const newLeft = Math.max(0, newLimitFor(d.settings.newPerDay, imp) - newStudiedToday(cards, d.states, now));
@@ -96,41 +90,54 @@ export function SetStart({ subject, unit }: { subject: string; unit: string }) {
           </div>
         </div>
         <button className="btn primary big block" disabled={picked.size === 0 || dueSum + freshSum === 0} onClick={start}>
-          {picked.size === 0 ? '区分を選んでください' : dueSum + freshSum === 0 ? '選んだ区分の今日の分は終わりました' : 'この区分で学習を始める'}
+          {picked.size === 0
+            ? '区分を選んでください'
+            : dueSum + freshSum === 0
+              ? '今日の分は終わりました'
+              : sections.length > 1
+                ? 'この区分で学習を始める'
+                : '学習を始める'}
         </button>
-        {weak && (
-          <a className="btn small" href={`#/study/weak/${subject}/${unit}`} style={{ alignSelf: 'flex-start' }}>
-            このセットの苦手カードを復習
+        <div className="row">
+          <a className="btn small" href={`#/list/${subject}/${unit}`}>
+            カードの一覧を見る
           </a>
-        )}
+          {weak && (
+            <a className="btn small" href={`#/study/weak/${subject}/${unit}`}>
+              このセットの苦手カードを復習
+            </a>
+          )}
+        </div>
       </section>
 
-      <section className="panel">
-        <div className="row" style={{ marginBottom: 6 }}>
-          <h2 style={{ margin: 0 }}>区分を選ぶ</h2>
-          <span className="spacer" />
-          <button className="btn small" onClick={() => setPicked(new Set(sections))}>
-            すべて
-          </button>
-          <button className="btn small" onClick={() => setPicked(new Set())}>
-            外す
-          </button>
-        </div>
-        <div className="section-list">
-          {rows.map((r) => (
-            <label className="section-row" key={r.name}>
-              <input type="checkbox" checked={picked.has(r.name)} onChange={() => toggle(r.name)} />
-              <span className="section-name">{r.name || '（区分なし）'}</span>
-              <span className="section-nums">
-                <span className={r.due ? 'due' : ''}>復習 {r.due}</span>
-                <span>
-                  未学習 {r.unseen}／{r.total}枚
+      {sections.length > 1 && (
+        <section className="panel">
+          <div className="row" style={{ marginBottom: 6 }}>
+            <h2 style={{ margin: 0 }}>区分を選ぶ</h2>
+            <span className="spacer" />
+            <button className="btn small" onClick={() => setPicked(new Set(sections))}>
+              すべて
+            </button>
+            <button className="btn small" onClick={() => setPicked(new Set())}>
+              外す
+            </button>
+          </div>
+          <div className="section-list">
+            {rows.map((r) => (
+              <label className="section-row" key={r.name}>
+                <input type="checkbox" checked={picked.has(r.name)} onChange={() => toggle(r.name)} />
+                <span className="section-name">{r.name || '（区分なし）'}</span>
+                <span className="section-nums">
+                  <span className={r.due ? 'due' : ''}>復習 {r.due}</span>
+                  <span>
+                    未学習 {r.unseen}／{r.total}枚
+                  </span>
                 </span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
