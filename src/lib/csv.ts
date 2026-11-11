@@ -71,7 +71,11 @@ export function toCsv(rows: string[][]): string {
 
 /** Excel で文字化けしないよう BOM 付き UTF-8 で保存させる */
 export function downloadCsv(filename: string, rows: string[][]): void {
-  const blob = new Blob(['﻿' + toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  downloadFile(filename, '﻿' + toCsv(rows), 'text/csv;charset=utf-8');
+}
+
+export function downloadFile(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

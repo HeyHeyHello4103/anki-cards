@@ -1,7 +1,7 @@
 import { normalize } from './scheduler';
-import type { SavedState } from './types';
+import type { CardData, SavedState } from './types';
 
-/** 以前の学習記録を移すためのファイル（管理者が変換して利用者に渡す） */
+/** 学習記録のファイル（以前の暗記カードの記録を変換したもの、またはこのサイトで書き出したもの） */
 export interface ProgressFile {
   format: 'anki-cards-progress';
   version: 1;
@@ -72,4 +72,14 @@ export function planProgressImport(
     plan.imported++;
   }
   return plan;
+}
+
+/** 学習したカードの記録を、取り込みと同じ形のファイルにまとめる（未学習のカードは入れない） */
+export function exportProgress(cards: CardData[], states: Record<string, SavedState>, source: string): ProgressFile {
+  const out: Record<string, SavedState> = {};
+  for (const c of cards) {
+    const s = states[c.id];
+    if (s && s.st !== 0) out[c.id] = s;
+  }
+  return { format: 'anki-cards-progress', version: 1, source, states: out };
 }

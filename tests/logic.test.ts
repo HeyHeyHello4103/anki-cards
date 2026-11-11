@@ -12,7 +12,7 @@ import {
   type ImportRow,
 } from '../src/lib/importer';
 import { deleteCard, deleteSet, mergeSet, moveSections, moveSetOrder, moveSetToSubject, renameSections, renameSet } from '../src/lib/edit';
-import { parseProgressFile, planProgressImport } from '../src/lib/progress';
+import { exportProgress, parseProgressFile, planProgressImport } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import {
   afterLapse,
@@ -468,6 +468,12 @@ describe('progress', () => {
     expect([plan.imported, plan.keptNewer, plan.notFound]).toEqual([2, 1, 1]);
     expect(Object.keys(plan.writes.c1)).toEqual(['a']);
     expect(Object.keys(plan.writes.c2)).toEqual(['c']);
+  });
+  it('書き出したファイルはそのまま読み込める（未学習のカードは入れない）', () => {
+    const states = { a: st(now), b: state(now, State.New) };
+    const file = exportProgress([card('a'), card('b'), card('c')], states, '英語 › 和文英訳');
+    expect(Object.keys(file.states)).toEqual(['a']);
+    expect(parseProgressFile(JSON.stringify(file))).toEqual(file);
   });
   it('以前の方式の記録は今の形にそろえて書き込む', () => {
     const legacy = { due: now, s: 8, d: 5, st: State.Review, sd: 8, ls: 0, r: 3, l: 0, lr: now, fr: now } as SavedState;

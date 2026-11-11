@@ -1,11 +1,12 @@
 import { signOut } from 'firebase/auth';
 import { doc, setDoc, writeBatch } from 'firebase/firestore';
 import { useMemo, useState, type FormEvent } from 'react';
-import { daysUntil } from '../lib/dates';
+import { downloadFile } from '../lib/csv';
+import { dayKey, daysUntil } from '../lib/dates';
 import { auth, db } from '../lib/firebase';
-import { parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
+import { exportProgress, parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
 import { maxIntervalFor } from '../lib/scheduler';
-import { impOf, isUsed, newLimitFor, summarize, unitKey } from '../lib/session';
+import { impOf, isUsed, newLimitFor, sectionsOf, summarize, unitKey } from '../lib/session';
 import { useData } from '../lib/store';
 import type { Imp } from '../lib/types';
 import { APP_VERSION, BUILT_AT, formatBuiltAt } from '../lib/version';
@@ -177,6 +178,87 @@ function ProgressImport() {
   );
 }
 
+/** 自分の学習記録をセット（区分）ごとに書き出す。ファイルは「以前の学習記録を取り込む」でそのまま読み込める */
+function ProgressExport() {
+  const d = useData();
+  const sets = useMemo(
+    () => (d.catalog?.subjects ?? []).flatMap((s) => s.units.map((u) => ({ subject: s.id, unit: u.id, label: `${s.name} › ${u.name}` }))),
+    [d.catalog],
+  );
+  const [key, setKey] = useState('');
+  const [section, setSection] = useState('*');
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const set = sets.find((x) => unitKey(x.subject, x.unit) === key);
+  const setCards = useMemo(() => (set ? d.cards.filter((c) => c.s === set.subject && c.u === set.unit) : []), [d.cards, set]);
+  const sections = useMemo(() => sectionsOf(setCards), [setCards]);
+  const cards = section === '*' ? setCards : setCards.filter((c) => (c.c ?? '') === section);
+  const file = set ? exportProgress(cards, d.states, section === '*' ? set.label : `${set.label} › ${section}`) : null;
+  const n = file ? Object.keys(file.states).length : 0;
+  const text = file ? JSON.stringify(file) : '';
+  // 日本語のファイル名は環境によって「download」に置き換わるため英数字にする
+  const filename = `anki-progress-${dayKey(Date.now())}.json`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMsg({ kind: 'ok', text: `${n}枚分の記録をコピーしました` });
+    } catch {
+      setMsg({ kind: 'error', text: 'コピーできませんでした。「ファイルに保存」を使ってください' });
+    }
+  };
+
+  if (!sets.length) return null;
+  return (
+    <section className="panel stack">
+      <h2 style={{ margin: 0 }}>学習記録を書き出す</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        選んだセットの学習記録（学習したカードの分）を書き出します。書き出したファイルは「以前の学習記録を取り込む」でそのまま読み込めます。
+      </p>
+      <div className="row">
+        <select
+          value={key}
+          onChange={(e) => (setKey(e.target.value), setSection('*'), setMsg(null))}
+          style={{ flex: 1, minWidth: 180 }}
+          aria-label="セット"
+        >
+          <option value="">セットを選ぶ</option>
+          {sets.map((x) => (
+            <option key={unitKey(x.subject, x.unit)} value={unitKey(x.subject, x.unit)}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+        {sections.length > 1 && (
+          <select value={section} onChange={(e) => (setSection(e.target.value), setMsg(null))} style={{ flex: 1, minWidth: 140 }} aria-label="区分">
+            <option value="*">すべての区分</option>
+            {sections.map((x) => (
+              <option key={x} value={x}>
+                {x || '（区分なし）'}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {file && (
+        <>
+          <div className="small">
+            {cards.length}枚のうち、学習した <b>{n}</b>枚分の記録
+          </div>
+          <div className="row">
+            <button className="btn primary" disabled={n === 0} onClick={() => (downloadFile(filename, text, 'application/json'), setMsg(null))}>
+              ファイルに保存
+            </button>
+            <button className="btn" disabled={n === 0} onClick={copy}>
+              コピー
+            </button>
+          </div>
+        </>
+      )}
+      {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+    </section>
+  );
+}
+
 export function Settings() {
   const d = useData();
   const [examDate, setExamDate] = useState(d.settings.examDate ?? '');
@@ -230,6 +312,7 @@ export function Settings() {
       <SetSettings />
 
       <ProgressImport />
+      <ProgressExport />
 
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>アカウント</h2>
