@@ -12,7 +12,7 @@ import {
   type ImportRow,
 } from '../src/lib/importer';
 import { deleteCard, deleteSet, mergeSet, moveSections, moveSetOrder, moveSetToSubject, renameSections, renameSet } from '../src/lib/edit';
-import { exportProgress, parseProgressFile, planProgressImport } from '../src/lib/progress';
+import { exportProgress, parseProgressFile, planProgressImport, toAsciiJson } from '../src/lib/progress';
 import { checkMath, plainText, renderRich, tokenize } from '../src/lib/render';
 import {
   afterLapse,
@@ -474,6 +474,10 @@ describe('progress', () => {
     const file = exportProgress([card('a'), card('b'), card('c')], states, '英語 › 和文英訳');
     expect(Object.keys(file.states)).toEqual(['a']);
     expect(parseProgressFile(JSON.stringify(file))).toEqual(file);
+    // 英数字だけで書いても（BOM が付いても）同じ内容として読める
+    const ascii = toAsciiJson(file);
+    expect(/^[\x00-\x7e]*$/.test(ascii)).toBe(true);
+    expect(parseProgressFile('\uFEFF' + ascii)).toEqual(file);
   });
   it('以前の方式の記録は今の形にそろえて書き込む', () => {
     const legacy = { due: now, s: 8, d: 5, st: State.Review, sd: 8, ls: 0, r: 3, l: 0, lr: now, fr: now } as SavedState;

@@ -27,7 +27,8 @@ function isState(v: unknown): v is SavedState {
 export function parseProgressFile(text: string): ProgressFile {
   let data: unknown;
   try {
-    data = JSON.parse(text);
+    // 編集アプリで保存し直すと先頭に BOM が付くことがある
+    data = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch {
     throw new Error('ファイルを読み取れませんでした。学習記録のファイル（.json）を選んでください');
   }
@@ -82,4 +83,9 @@ export function exportProgress(cards: CardData[], states: Record<string, SavedSt
     if (s && s.st !== 0) out[c.id] = s;
   }
   return { format: 'anki-cards-progress', version: 1, source, states: out };
+}
+
+/** 日本語などを \uXXXX で書き、どのアプリで開いても文字化けしない（英数字だけの）JSON にする */
+export function toAsciiJson(v: unknown): string {
+  return JSON.stringify(v).replace(/[\u007f-\uffff]/g, (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
 }

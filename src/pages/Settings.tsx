@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { downloadFile } from '../lib/csv';
 import { dayKey, daysUntil } from '../lib/dates';
 import { auth, db } from '../lib/firebase';
-import { exportProgress, parseProgressFile, planProgressImport, type ProgressFile } from '../lib/progress';
+import { exportProgress, parseProgressFile, planProgressImport, toAsciiJson, type ProgressFile } from '../lib/progress';
 import { maxIntervalFor } from '../lib/scheduler';
 import { impOf, isUsed, newLimitFor, sectionsOf, summarize, unitKey } from '../lib/session';
 import { useData } from '../lib/store';
@@ -178,23 +178,33 @@ function ProgressImport() {
   );
 }
 
-/** 自分の学習記録をセット（区分）ごとに書き出す。ファイルは「以前の学習記録を取り込む」でそのまま読み込める */
-function ProgressExport() {
+/**
+ * 自分の学習記録をセット（区分）ごとに書き出す。ファイルは「以前の学習記録を取り込む」でそのまま読み込める。
+ * preset はセット名・区分名で最初から選んでおく（#/export/{セット名}/{区分名} のリンク用）
+ */
+export function ProgressExport({ preset }: { preset?: { set: string; section?: string } }) {
   const d = useData();
   const sets = useMemo(
-    () => (d.catalog?.subjects ?? []).flatMap((s) => s.units.map((u) => ({ subject: s.id, unit: u.id, label: `${s.name} › ${u.name}` }))),
+    () =>
+      (d.catalog?.subjects ?? []).flatMap((s) =>
+        s.units.map((u) => ({ subject: s.id, unit: u.id, name: u.name, label: `${s.name} › ${u.name}` })),
+      ),
     [d.catalog],
   );
-  const [key, setKey] = useState('');
-  const [section, setSection] = useState('*');
+  const [key, setKey] = useState(() => {
+    const hit = preset && sets.find((x) => x.name === preset.set);
+    return hit ? unitKey(hit.subject, hit.unit) : '';
+  });
+  const [picked, setSection] = useState(preset?.section ?? '*');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const set = sets.find((x) => unitKey(x.subject, x.unit) === key);
   const setCards = useMemo(() => (set ? d.cards.filter((c) => c.s === set.subject && c.u === set.unit) : []), [d.cards, set]);
   const sections = useMemo(() => sectionsOf(setCards), [setCards]);
+  const section = sections.includes(picked) ? picked : '*';
   const cards = section === '*' ? setCards : setCards.filter((c) => (c.c ?? '') === section);
   const file = set ? exportProgress(cards, d.states, section === '*' ? set.label : `${set.label} › ${section}`) : null;
   const n = file ? Object.keys(file.states).length : 0;
-  const text = file ? JSON.stringify(file) : '';
+  const text = file ? toAsciiJson(file) : '';
   // 日本語のファイル名は環境によって「download」に置き換わるため英数字にする
   const filename = `anki-progress-${dayKey(Date.now())}.json`;
 
@@ -245,7 +255,7 @@ function ProgressExport() {
             {cards.length}枚のうち、学習した <b>{n}</b>枚分の記録
           </div>
           <div className="row">
-            <button className="btn primary" disabled={n === 0} onClick={() => (downloadFile(filename, text, 'application/json'), setMsg(null))}>
+            <button className="btn primary" disabled={n === 0} onClick={() => (downloadFile(filename, text, 'application/json;charset=utf-8'), setMsg(null))}>
               ファイルに保存
             </button>
             <button className="btn" disabled={n === 0} onClick={copy}>

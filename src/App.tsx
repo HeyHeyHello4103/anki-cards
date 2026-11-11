@@ -9,7 +9,7 @@ import { Home } from './pages/Home';
 import { Login, NotMember, VerifyEmail } from './pages/Login';
 import { SetList } from './pages/SetList';
 import { SetStart } from './pages/SetStart';
-import { Settings } from './pages/Settings';
+import { ProgressExport, Settings } from './pages/Settings';
 import { Stats } from './pages/Stats';
 import { Study } from './pages/Study';
 
@@ -89,6 +89,9 @@ function Shell() {
           <Stats />
         ) : page === 'settings' ? (
           <Settings />
+        ) : page === 'export' ? (
+          // #/export/{セット名}/{区分名} … 学習記録の書き出しを、セットと区分を選んだ状態で開く
+          <ProgressExport key={route.join('/')} preset={route[1] ? { set: route[1], section: route[2] } : undefined} />
         ) : page === 'admin' ? (
           <Admin tab={route[1] ?? 'cards'} />
         ) : (
